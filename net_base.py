@@ -6,8 +6,12 @@ import tensorflow as tf
 
 class NetBase():
 
-    def __init__(self):
+    def __init__(self, input_size=224, base_chs=64, init_param=None, inf_only=False):
         self.has_graph = False
+        self.input_size = input_size
+        self.base_chs = base_chs
+        self.init_param = init_param
+        self.inf_only = inf_only
 
     def build_net(self, x):
         raise NotImplementedError
