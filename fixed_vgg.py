@@ -4,7 +4,7 @@ import tensorflow as tf
 
 class FixedVGG():
 
-    def __init__(self, npy_path="fixed_vgg.npy"):
+    def __init__(self, npy_path="cut_fixed_vgg.npy"):
         params = np.load(npy_path, encoding="latin1").item()
         keys = sorted(params.keys())
         self._init_constant(keys, params)
@@ -44,6 +44,15 @@ def _test():
         nv1 = sess.run(v1, {x1: nx})
         nv2 = sess.run(v2, {x2: nx})
     print(np.sqrt(np.mean((nv1-nv2)**2)))
+    try:
+        vv = FixedVGG("fixed_vgg.npy")
+        x3 = tf.placeholder(tf.float32, [None, 224, 224, 3])
+        v3 = vv.build_graph(x3)
+        with tf.Session() as sess:
+            nv3 = sess.run(v3, {x3: nx})
+        print(np.sqrt(np.mean((nv1-nv3)**2)))
+    except FileNotFoundError:
+        print("Original VGG params not found; skipping this test.")
 
 
 if __name__ == "__main__":
