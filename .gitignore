@@ -1,0 +1,5 @@
+fixed_vgg.npy
+__pycache__/
+*.swp
+*.swo
+*~
