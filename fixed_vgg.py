@@ -33,13 +33,18 @@ class FixedVGG():
 
 
 def _test():
+    import os
     v = FixedVGG()
     print(v.consts.keys())
+    writer = tf.summary.FileWriter(os.path.join("tmp", "gruns"), tf.get_default_graph())
+    writer.close()
     x1 = tf.placeholder(tf.float32, [None, 224, 224, 3])
     x2 = tf.placeholder(tf.float32, [2, 224, 224, 3])
     nx = np.random.rand(2, 224, 224, 3).astype(np.float32)
     v1 = v.build_graph(x1)
     v2 = v.build_graph(x2)
+    writer = tf.summary.FileWriter(os.path.join("tmp", "vruns"), tf.get_default_graph())
+    writer.close()
     with tf.Session() as sess:
         nv1 = sess.run(v1, {x1: nx})
         nv2 = sess.run(v2, {x2: nx})
