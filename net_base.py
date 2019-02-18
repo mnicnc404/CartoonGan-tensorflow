@@ -12,6 +12,7 @@ class NetBase():
         self.base_chs = base_chs
         self.init_param = init_param
         self.inf_only = inf_only
+        self.out = None
 
     def build_net(self, x):
         raise NotImplementedError
