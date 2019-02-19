@@ -1,4 +1,3 @@
-import logging
 import tensorflow as tf
 from net_base import NetBase
 from modules import coupled_conv, batch_norm, conv
@@ -14,7 +13,7 @@ class Generator(NetBase):
     def build_graph(self, x, reuse=False):
         with tf.variable_scope(self.graph_prefix, reuse=reuse):
             chs = self.base_chs
-            logging.debug("initial conv: 3, %d" % chs)
+            self.logger.debug("initial conv: 3, %d" % chs)
             # Init conv
             x = conv(x, 3, chs, 5, 1, 2, 0, False, self.get_par(0))
             x = tf.nn.relu(batch_norm(
@@ -31,7 +30,7 @@ class Generator(NetBase):
                         stride = 2
                     else:
                         stride = 1
-                    logging.debug("downsample conv: %d, %d" % (prev_chs, chs))
+                    self.logger.debug("downsample conv: %d, %d" % (prev_chs, chs))
                     x = coupled_conv(x, prev_chs, chs, 3, stride, True, mcnt,
                                      *self.get_par(par_pos, par_pos+6))
                     prev_chs = chs
@@ -41,7 +40,7 @@ class Generator(NetBase):
             with tf.variable_scope("ResBlock", reuse=reuse):
                 for _ in range(8):
                     x1 = x
-                    logging.debug("res conv: %d, %d" % (prev_chs, chs))
+                    self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
                                      *self.get_par(par_pos, par_pos+6))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt+1,
@@ -57,17 +56,17 @@ class Generator(NetBase):
                         cur_size *= 2
                         chs /= 2
                         x = tf.image.resize_bilinear(x, (cur_size, cur_size))
-                    logging.debug("upsample conv: %d, %d, size: %d" % (prev_chs, chs, cur_size))
+                    self.logger.debug("upsample conv: %d, %d, size: %d" % (prev_chs, chs, cur_size))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
                                      *self.get_par(par_pos, par_pos+6))
                     par_pos += 6
                     mcnt += 1
                     prev_chs = chs
             # Final conv
-            logging.debug("final conv: %d, %d" % (prev_chs, chs))
+            self.logger.debug("final conv: %d, %d" % (prev_chs, chs))
             x = conv(x, prev_chs, 3, 5, 1, 2, mcnt, True, *self.get_par(par_pos, par_pos+2))
             par_pos += 2
-            logging.debug("%d param tensors traversed" % par_pos)
+            self.logger.debug("%d param tensors traversed" % par_pos)
         self.to_save_vars = [
             v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
         assert len(self.to_save_vars) == par_pos
@@ -79,22 +78,21 @@ class Generator(NetBase):
 def _test():
     import os
     import numpy as np
+    import logging
     logging.basicConfig(level=logging.DEBUG)
     size = 224
     x = tf.placeholder(tf.float32, [2, size, size, 3])
     net = Generator(input_size=size)
     nx = np.random.rand(2, size, size, 3).astype(np.float32)
     out_op = net.build_graph(x)
-    out_op2 = net.build_graph(x, True)
     writer = tf.summary.FileWriter(os.path.join("tmp", "gruns"), tf.get_default_graph())
     writer.close()
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         out = sess.run(out_op, {x: nx})
-        out2 = sess.run(out_op2, {x: nx})
+        net.save(sess, "tmp", "lul")
     logging.debug(out.shape)
-    logging.debug(out2.shape)
-    logging.debug(np.sqrt(np.mean((out-out2)**2)))
+    net.export("tmp", "lul", True, True)
 
 
 if __name__ == '__main__':
