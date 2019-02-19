@@ -28,7 +28,7 @@ class Discriminator(NetBase):
                 chs = chs if i == 2 or i == 4 else chs * 2
                 logging.debug("conv: %d, %d" % (prev_chs, chs))
                 x = tf.nn.leaky_relu(coupled_conv(x, prev_chs, chs, 3, stride, False, mcnt,
-                                                  *self.get_par(par_pos, par_pos+6)))
+                                                  self.get_par(par_pos, par_pos+6)))
                 prev_chs = chs
                 par_pos += 6
                 mcnt += 1

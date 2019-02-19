@@ -32,7 +32,7 @@ class Generator(NetBase):
                         stride = 1
                     self.logger.debug("downsample conv: %d, %d" % (prev_chs, chs))
                     x = coupled_conv(x, prev_chs, chs, 3, stride, True, mcnt,
-                                     *self.get_par(par_pos, par_pos+6))
+                                     self.get_par(par_pos, par_pos+6))
                     prev_chs = chs
                     par_pos += 6
                     mcnt += 1
@@ -42,9 +42,9 @@ class Generator(NetBase):
                     x1 = x
                     self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     *self.get_par(par_pos, par_pos+6))
+                                     self.get_par(par_pos, par_pos+6))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt+1,
-                                     *self.get_par(par_pos+6, par_pos+12))
+                                     self.get_par(par_pos+6, par_pos+12))
                     x += x1  # no relu as suggested by Sam Gross and Michael Wilber
                     mcnt += 2
                     par_pos += 12
@@ -58,7 +58,7 @@ class Generator(NetBase):
                         x = tf.image.resize_bilinear(x, (cur_size, cur_size))
                     self.logger.debug("upsample conv: %d, %d, size: %d" % (prev_chs, chs, cur_size))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     *self.get_par(par_pos, par_pos+6))
+                                     self.get_par(par_pos, par_pos+6))
                     par_pos += 6
                     mcnt += 1
                     prev_chs = chs
