@@ -70,7 +70,8 @@ class Generator(NetBase):
         self.to_save_vars = [
             v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
         assert len(self.to_save_vars) == par_pos
-        self.saver = None if reuse else tf.train.Saver(self.to_save_vars)
+        if self.saver is None:
+            self.saver = tf.train.Saver(self.to_save_vars)
         self.has_graph = True
         return x
 

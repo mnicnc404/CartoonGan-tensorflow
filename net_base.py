@@ -11,6 +11,7 @@ class NetBase():
     def __init__(self, input_size=224, base_chs=64, init_param=None, inf_only=False):
         self.has_graph = False
         self.saved_graph = False
+        self.saver = None
         self.input_size = input_size
         self.base_chs = base_chs
         self.init_param = init_param
