@@ -26,7 +26,7 @@ class NetBase():
         if j is None:
             return self.init_param[i] if self.init_param is not None else None
         else:
-            return self.init_param[i:j] if self.init_param is not None else [None]
+            return self.init_param[i:j] if self.init_param is not None else [None] * (j - i)
 
     def save(self, sess, directory, fname):
         assert self.has_graph, "Net graph not constructed!"

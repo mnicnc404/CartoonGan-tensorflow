@@ -1,6 +1,6 @@
 import tensorflow as tf
 from net_base import NetBase
-from modules import coupled_conv, batch_norm, conv
+from modules import coupled_conv, instance_norm, conv
 
 
 class Generator(NetBase):
@@ -16,8 +16,11 @@ class Generator(NetBase):
             self.logger.debug("initial conv: 3, %d" % chs)
             # Init conv
             x = conv(x, 3, chs, 5, 1, 2, 0, False, self.get_par(0))
-            x = tf.nn.relu(batch_norm(
-                x, chs, 1, 1e-5,
+            # x = tf.nn.relu(batch_norm(
+            #     x, chs, 1, 1e-5,
+            #     *self.get_par(1, 3)))
+            x = tf.nn.relu(instance_norm(
+                x, chs, 1, 1e-6,
                 *self.get_par(1, 3)))
             prev_chs = chs
             par_pos = 3
