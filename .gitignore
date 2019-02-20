@@ -8,3 +8,6 @@ scripts/*.pb
 scripts/runs/
 
 tmp/
+datasets/
+.idea/
+.ipynb_checkpoints/
