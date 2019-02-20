@@ -63,6 +63,21 @@ def batch_norm(
         return x
 
 
+def instance_norm(x, chs, mcnt, eps=1e-06, init_g=None, init_b=None):
+    with tf.variable_scope(f"in_{mcnt}"):
+        gamma = tf.get_variable(
+            "gamma", dtype=tf.float32,
+            initializer=init_g if init_g is not None else tf.ones([chs]))
+        beta = tf.get_variable(
+            "beta", dtype=tf.float32,
+            initializer=init_b if init_b is not None else tf.zeros([chs]))
+        mean, variance = tf.nn.moments(x, [1, 2], name="moments", keep_dims=True)
+        x = tf.nn.batch_normalization(
+            x, mean, variance, beta, gamma, eps, name='instancenorm')
+
+        return x
+
+
 def conv(
         x, in_chs, out_chs, k_size, stride, pad, mcnt, bias,
         init_w=None, init_b=None):  # load from numpy
