@@ -3,16 +3,17 @@ import tensorflow as tf
 
 def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
                  mcnt, init_param):
+    has_param = init_param[0] is not None
     with tf.variable_scope("coupled_conv_%02d" % mcnt):
         pad = (k_size - 1) // 2
         x = dconv(x, in_chs, k_size, stride, pad, 0, False, 1,
-                  init_param[0] if init_param else None)
+                  init_param[0] if has_param else None)
         x = batch_norm(x, in_chs, 1, 1e-5,
-                       *init_param[1:3] if init_param else [None])
+                       *init_param[1:3] if has_param else [None])
         x = conv(x, in_chs, out_chs, 1, 1, 0, 2, False,
-                 init_param[3] if init_param else None)
+                 init_param[3] if has_param else None)
         x = batch_norm(x, out_chs, 3, 1e-5,
-                       *init_param[4:6] if init_param else [None])
+                       *init_param[4:6] if has_param else [None])
         return tf.nn.relu(x) if act else x
 
 
