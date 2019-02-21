@@ -6,15 +6,8 @@ def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
     with tf.variable_scope(f"coupled_conv_{mcnt}"):
         pad = (k_size - 1) // 2
         x = dconv(x, in_chs, k_size, stride, pad, 0, False, 1, init_param[0])
-        # x = batch_norm(x, in_chs, 1, 1e-5,
-        #                *init_param[1:3] if init_param else [None])
-
         x = instance_norm(x, in_chs, 1, 1e-6, *init_param[1:3])
-
         x = conv(x, in_chs, out_chs, 1, 1, 0, 2, False, init_param[3])
-        # x = batch_norm(x, out_chs, 3, 1e-5,
-        #                *init_param[4:6] if init_param else [None])
-
         x = instance_norm(x, out_chs, 3, 1e-6, *init_param[4:6])
         return tf.nn.relu(x) if act else x
 

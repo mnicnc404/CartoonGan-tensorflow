@@ -16,9 +16,6 @@ class Generator(NetBase):
             self.logger.debug("initial conv: 3, %d" % chs)
             # Init conv
             x = conv(x, 3, chs, 5, 1, 2, 0, False, self.get_par(0))
-            # x = tf.nn.relu(batch_norm(
-            #     x, chs, 1, 1e-5,
-            #     *self.get_par(1, 3)))
             x = tf.nn.relu(instance_norm(
                 x, chs, 1, 1e-6,
                 *self.get_par(1, 3)))
