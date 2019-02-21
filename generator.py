@@ -5,9 +5,9 @@ from modules import coupled_conv, instance_norm, conv
 
 class Generator(NetBase):
 
-    def __init__(self, input_size=224, base_chs=64, init_param=None, inf_only=False):
+    def __init__(self, input_size=224, base_chs=64, init_params=None, inf_only=False):
         super(Generator, self).__init__(
-                input_size, base_chs, init_param, inf_only)
+                input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Generator"
 
     def build_graph(self, x, reuse=False):
@@ -15,10 +15,10 @@ class Generator(NetBase):
             chs = self.base_chs
             self.logger.debug("initial conv: 3, %d" % chs)
             # Init conv
-            x = conv(x, 3, chs, 5, 1, 2, 0, False, self.get_par(0))
+            x = conv(x, 3, chs, 5, 1, 2, 0, False, self.get_params(0))
             x = tf.nn.relu(instance_norm(
                 x, chs, 1, 1e-6,
-                *self.get_par(1, 3)))
+                *self.get_params(1, 3)))
             prev_chs = chs
             par_pos = 3
             mcnt = 2
@@ -32,7 +32,7 @@ class Generator(NetBase):
                         stride = 1
                     self.logger.debug("downsample conv: %d, %d" % (prev_chs, chs))
                     x = coupled_conv(x, prev_chs, chs, 3, stride, True, mcnt,
-                                     self.get_par(par_pos, par_pos+6))
+                                     self.get_params(par_pos, par_pos + 6))
                     prev_chs = chs
                     par_pos += 6
                     mcnt += 1
@@ -42,9 +42,9 @@ class Generator(NetBase):
                     x1 = x
                     self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     self.get_par(par_pos, par_pos+6))
-                    x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt+1,
-                                     self.get_par(par_pos+6, par_pos+12))
+                                     self.get_params(par_pos, par_pos + 6))
+                    x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt + 1,
+                                     self.get_params(par_pos + 6, par_pos + 12))
                     x += x1  # no relu as suggested by Sam Gross and Michael Wilber
                     mcnt += 2
                     par_pos += 12
@@ -58,13 +58,13 @@ class Generator(NetBase):
                         x = tf.image.resize_bilinear(x, (cur_size, cur_size))
                     self.logger.debug("upsample conv: %d, %d, size: %d" % (prev_chs, chs, cur_size))
                     x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     self.get_par(par_pos, par_pos+6))
+                                     self.get_params(par_pos, par_pos + 6))
                     par_pos += 6
                     mcnt += 1
                     prev_chs = chs
             # Final conv
             self.logger.debug("final conv: %d, %d" % (prev_chs, chs))
-            x = conv(x, prev_chs, 3, 5, 1, 2, mcnt, True, *self.get_par(par_pos, par_pos+2))
+            x = conv(x, prev_chs, 3, 5, 1, 2, mcnt, True, *self.get_params(par_pos, par_pos + 2))
             par_pos += 2
             self.logger.debug("%d param tensors traversed" % par_pos)
         self.to_save_vars = [

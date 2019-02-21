@@ -8,13 +8,13 @@ from tensorflow.tools.graph_transforms import TransformGraph
 
 class NetBase():
 
-    def __init__(self, input_size=224, base_chs=64, init_param=None, inf_only=False):
+    def __init__(self, input_size=224, base_chs=64, init_params=None, inf_only=False):
         self.has_graph = False
         self.saved_graph = False
         self.saver = None
         self.input_size = input_size
         self.base_chs = base_chs
-        self.init_param = init_param
+        self.init_params = init_params
         self.inf_only = inf_only
         self.logger = logging.getLogger("NetLogger")
         self.logger.setLevel(logging.DEBUG)
@@ -22,11 +22,11 @@ class NetBase():
     def build_graph(self, x):
         raise NotImplementedError
 
-    def get_par(self, i, j=None):
+    def get_params(self, i, j=None):
         if j is None:
-            return self.init_param[i] if self.init_param is not None else None
+            return self.init_params[i] if self.init_params is not None else None
         else:
-            return self.init_param[i:j] if self.init_param is not None else [None] * (j - i)
+            return self.init_params[i:j] if self.init_params is not None else [None] * (j - i)
 
     def save(self, sess, directory, fname):
         assert self.has_graph, "Net graph not constructed!"
