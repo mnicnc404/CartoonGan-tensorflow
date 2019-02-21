@@ -68,7 +68,8 @@ class Generator(NetBase):
             par_pos += 2
             self.logger.debug("%d param tensors traversed" % par_pos)
         self.to_save_vars = [
-            v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
+            v for v in tf.global_variables() if v.name.startswith(self.graph_prefix) and
+            "save" not in v.name]
         assert len(self.to_save_vars) == par_pos
         if self.saver is None:
             self.saver = tf.train.Saver(self.to_save_vars)
@@ -82,7 +83,7 @@ def _test():
     import logging
     logging.basicConfig(level=logging.DEBUG)
     size = 224
-    x = tf.placeholder(tf.float32, [2, size, size, 3])
+    x = tf.placeholder(tf.float32, [2, size, size, 3], name="input")
     net = Generator(input_size=size)
     nx = np.random.rand(2, size, size, 3).astype(np.float32)
     out_op = net.build_graph(x)
