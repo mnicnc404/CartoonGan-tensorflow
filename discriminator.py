@@ -6,9 +6,9 @@ from modules import coupled_conv, batch_norm, conv
 
 class Discriminator(NetBase):
 
-    def __init__(self, input_size=224, base_chs=32, init_param=None, inf_only=False):
+    def __init__(self, input_size=224, base_chs=32, init_params=None, inf_only=False):
         super(Discriminator, self).__init__(
-                input_size, base_chs, init_param, inf_only)
+                input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Discriminator"
 
     def build_graph(self, x, reuse=False):
@@ -16,10 +16,10 @@ class Discriminator(NetBase):
             chs = self.base_chs
             logging.debug("initial conv: 3, %d" % chs)
             # Init conv
-            x = conv(x, 3, chs, 3, 1, 1, 0, False, self.get_par(0))
+            x = conv(x, 3, chs, 3, 1, 1, 0, False, self.get_params(0))
             x = tf.nn.leaky_relu(batch_norm(
                 x, chs, 1, 1e-5,
-                *self.get_par(1, 3)))
+                *self.get_params(1, 3)))
             prev_chs = chs
             par_pos = 3
             mcnt = 2
@@ -28,12 +28,12 @@ class Discriminator(NetBase):
                 chs = chs if i == 2 or i == 4 else chs * 2
                 logging.debug("conv: %d, %d" % (prev_chs, chs))
                 x = tf.nn.leaky_relu(coupled_conv(x, prev_chs, chs, 3, stride, False, mcnt,
-                                                  self.get_par(par_pos, par_pos+6)))
+                                                  self.get_params(par_pos, par_pos + 6)))
                 prev_chs = chs
                 par_pos += 6
                 mcnt += 1
             logging.debug("final conv: %d, 1" % prev_chs)
-            x = conv(x, prev_chs, 1, 3, 1, 1, mcnt, True, *self.get_par(par_pos, par_pos+2))
+            x = conv(x, prev_chs, 1, 3, 1, 1, mcnt, True, *self.get_params(par_pos, par_pos + 2))
             par_pos += 2
             logging.debug("%d param tensors traversed" % par_pos)
         self.to_save_vars = [
