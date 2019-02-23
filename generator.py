@@ -67,9 +67,12 @@ class Generator(NetBase):
             x = conv(x, prev_chs, 3, 5, 1, 2, mcnt, True, *self.get_params(par_pos, par_pos + 2))
             par_pos += 2
             self.logger.debug("%d param tensors traversed" % par_pos)
-        self.to_save_vars = [
-            v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
-        assert len(self.to_save_vars) == par_pos
+        if self.to_save_vars is None:
+            # FIXME: there should be a better way of doing this
+            # FIXME: What if build_graph in new Graph?
+            self.to_save_vars = [
+                v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
+            assert len(self.to_save_vars) == par_pos
         if self.saver is None:
             self.saver = tf.train.Saver(self.to_save_vars)
         self.has_graph = True
@@ -82,7 +85,7 @@ def _test():
     import logging
     logging.basicConfig(level=logging.DEBUG)
     size = 224
-    x = tf.placeholder(tf.float32, [2, size, size, 3])
+    x = tf.placeholder(tf.float32, [2, size, size, 3], name="input")
     net = Generator(input_size=size)
     nx = np.random.rand(2, size, size, 3).astype(np.float32)
     out_op = net.build_graph(x)
