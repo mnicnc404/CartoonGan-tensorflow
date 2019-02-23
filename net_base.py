@@ -12,6 +12,7 @@ class NetBase():
         self.has_graph = False
         self.saved_graph = False
         self.saver = None
+        self.to_save_vars = None
         self.input_size = input_size
         self.base_chs = base_chs
         self.init_params = init_params
@@ -64,6 +65,8 @@ class NetBase():
         with open(path, "wb") as f:
             pickle.dump(params, f)
 
+    # FIXME: "load" should not be done in export...?
+    # FIXME: load best ckpts -> export?
     def export(self, directory, ckptname, optimize=False, save_npy=False):
         # FIXME: we should read image name
         # FIXME: placholder of image tensor is just a temporal solution
@@ -71,11 +74,17 @@ class NetBase():
         with tf.Graph().as_default():
             x = tf.placeholder(tf.float32, [1, size, size, 3], name="input")
             out = self.build_graph(x)
+            # FIXME: there should be a better way doing this
+            to_save_vars = [
+                v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
+            export_saver = tf.train.Saver(to_save_vars)
             with tf.Session() as sess:
-                self.load(sess, directory, ckptname)
+                export_saver.restore(sess, os.path.join(directory, ckptname))
                 if save_npy:
                     npypath = os.path.join(directory, f"{ckptname}.pkl")
-                    self.save_to_numpy(sess, npypath)
+                    params = [np.array(sess.run(v)) for v in to_save_vars]
+                    with open(npypath, "wb") as f:
+                        pickle.dump(params, f)
                     self.logger.info(
                         "Params of list of numpy array format saved to %s" % npypath)
                 in_graph_def = tf.get_default_graph().as_graph_def()
