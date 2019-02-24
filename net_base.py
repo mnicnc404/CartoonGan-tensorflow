@@ -23,6 +23,9 @@ class NetBase():
     def build_graph(self, x):
         raise NotImplementedError
 
+    def __call__(self, x):
+        return self.build_graph(x)
+
     def get_params(self, i, j=None):
         if j is None:
             return self.init_params[i] if self.init_params is not None else None
@@ -67,26 +70,36 @@ class NetBase():
 
     # FIXME: "load" should not be done in export...?
     # FIXME: load best ckpts -> export?
-    def export(self, directory, ckptname, optimize=False, save_npy=False):
+    def export(self, directory, ckptname, optimize=False, save_npy=False, sess=None):
         # FIXME: we should read image name
         # FIXME: placholder of image tensor is just a temporal solution
+        # at least 1 from sess or ckptname should be provided
+        to_del = False
+        to_load_name = ckptname
+        if sess is not None:
+            from uuid import uuid4
+            to_load_name = f"tmp_{uuid4().hex}"
+            while os.path.exists(os.path.join(directory, to_load_name)):
+                to_load_name = f"tmp_{uuid4().hex}"
+            self.logger.info("Placing current session variables to "
+                             f"{os.path.join(directory, to_load_name)}, which "
+                             "will be deleted after exportation")
+            self.save(sess, directory, to_load_name)
+            to_del = True
         size = self.input_size  # only for code readability
         with tf.Graph().as_default():
             x = tf.placeholder(tf.float32, [1, size, size, 3], name="input")
             out = self.build_graph(x)
-            # FIXME: there should be a better way doing this
-            to_save_vars = [
-                v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
-            export_saver = tf.train.Saver(to_save_vars)
+            to_export = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.graph_prefix)
+            export_saver = tf.train.Saver(to_export)
             with tf.Session() as sess:
-                export_saver.restore(sess, os.path.join(directory, ckptname))
+                export_saver.restore(sess, os.path.join(directory, to_load_name))
                 if save_npy:
                     npypath = os.path.join(directory, f"{ckptname}.pkl")
-                    params = [np.array(sess.run(v)) for v in to_save_vars]
+                    params = [np.array(sess.run(v)) for v in to_export]
                     with open(npypath, "wb") as f:
                         pickle.dump(params, f)
-                    self.logger.info(
-                        "Params of list of numpy array format saved to %s" % npypath)
+                    self.logger.info(f"Params of list of numpy array format saved to {npypath}")
                 in_graph_def = tf.get_default_graph().as_graph_def()
                 out_graph_def = tf.graph_util.convert_variables_to_constants(
                     sess, in_graph_def, [out.op.name])
@@ -98,10 +111,17 @@ class NetBase():
                                                 "fold_batch_norms",
                                                 "fold_old_batch_norms"])
                 ckptname = f"optimized_{ckptname}"
-            ckptpath = os.path.join(directory, f"{ckptname}.pb")
-            with tf.gfile.GFile(ckptpath, 'wb') as f:
+            pbpath = os.path.join(directory, f"{ckptname}.pb")
+            with tf.gfile.GFile(pbpath, 'wb') as f:
                 f.write(out_graph_def.SerializeToString())
-            self.logger.info("Optimized frozen pb saved to %s" % ckptpath)
+            self.logger.info("Optimized frozen pb saved to %s" % pbpath)
             node_name_path = os.path.join(directory, "node_names.txt")
             with open(node_name_path, "w") as f:
                 f.write(f"{x.op.name}\n{out.op.name}")
+        if to_del:
+            from glob import glob
+            # from shutil import rmtree
+            # rmtree(os.path.join(directory, f"{to_load_name}*"))
+            for p in glob(os.path.join(directory, f"{to_load_name}*")):
+                os.remove(p)
+            self.logger.info(f"temporal ckpt {os.path.join(directory, to_load_name)} deleted.")
