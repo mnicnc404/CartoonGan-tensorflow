@@ -2,7 +2,8 @@ import os
 import numpy as np
 import tensorflow as tf
 import matplotlib as mpl
-mpl.use('agg')
+
+mpl.use("agg")
 import matplotlib.pyplot as plt
 from glob import glob
 from datetime import datetime
@@ -22,8 +23,17 @@ def _tqdm(res, *args, **kwargs):
 
 
 class Trainer:
-    def __init__(self, dataset_name, source_domain, target_domain, input_size, batch_size, show_progress, logger,
-                 **kwargs):
+    def __init__(
+        self,
+        dataset_name,
+        source_domain,
+        target_domain,
+        input_size,
+        batch_size,
+        show_progress,
+        logger,
+        **kwargs,
+    ):
         self.dataset_name = dataset_name
         self.source_domain = source_domain
         self.target_domain = target_domain
@@ -34,9 +44,12 @@ class Trainer:
             self.logger = logger
         else:
             import logging
+
             self.logger = logging.getLogger()
             self.logger.setLevel(logging.info)
-            self.logger.warning("You are using the root logger, which has bad a format.")
+            self.logger.warning(
+                "You are using the root logger, which has bad a format."
+            )
             self.logger.warning("Please consider passing a better logger.")
 
         if not show_progress or __no_tqdm__:
@@ -44,21 +57,23 @@ class Trainer:
         else:
             self.tqdm = tqdm
 
-
     def _save_generated_images(self, batch_x, step=None):
         batch_size = batch_x.shape[0]
         fig = plt.figure(figsize=(15, batch_size // 8 / 4 * 9))
         for i in range(batch_size):
             fig.add_subplot(batch_size // 8, 8, i + 1)
-            plt.imshow(batch_x[i], cmap='Greys_r')
-            plt.axis('off')
+            plt.imshow(batch_x[i], cmap="Greys_r")
+            plt.axis("off")
         if step is not None:
-            plt.savefig(f'runs/image_at_step_{step}.png')
+            plt.savefig(f"runs/image_at_step_{step}.png")
 
-
-    def pretrain_generator(self, pass_vgg=False, learning_rate=1e-5, num_iterations=1000, **kwargs):
-        self.logger.info(f"Building dataset using {self.dataset_name} with domain {self.source_domain}...")
-        files = glob(f'./datasets/{self.dataset_name}/train{self.source_domain}/*.*')
+    def pretrain_generator(
+        self, pass_vgg=False, learning_rate=1e-5, num_iterations=1000, **kwargs
+    ):
+        self.logger.info(
+            f"Building dataset using {self.dataset_name} with domain {self.source_domain}..."
+        )
+        files = glob(f"./datasets/{self.dataset_name}/train{self.source_domain}/*.*")
         ds = tf.data.Dataset.from_tensor_slices(files)
 
         def image_processing(filename):
@@ -98,7 +113,7 @@ class Trainer:
 
             # load latest checkpoint
             try:
-                g.load(sess, 'runs')
+                g.load(sess, "runs")
             except ValueError:
                 pass
 
@@ -113,10 +128,12 @@ class Trainer:
                     end = datetime.utcnow()
                     time_use = end - start
 
-                    self.logger.info(f"Step {step}, batch_loss: {batch_loss}, time used: {time_use}")
+                    self.logger.info(
+                        f"Step {step}, batch_loss: {batch_loss}, time used: {time_use}"
+                    )
                     fake_batch = sess.run(generated_images, {input_images: real_batch})
-                    g.save(sess, 'runs', 'generator')
-                    save_generated_images(np.clip(fake_batch, 0, 1), step=step)
+                    g.save(sess, "runs", "generator")
+                    self._save_generated_images(np.clip(fake_batch, 0, 1), step=step)
 
 
 def main(**kwargs):
@@ -124,7 +141,7 @@ def main(**kwargs):
     t.pretrain_generator(**kwargs)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
     import sys
     import logging
@@ -138,8 +155,12 @@ if __name__ == '__main__':
     parser.add_argument("--pass_vgg", action="store_true")
     parser.add_argument("--logdir", type=str, default="runs")
     parser.add_argument("--savedir", type=str, default="ckpts")
-    parser.add_argument("--logging_lvl", type=str, default="info",
-                        choices=["debug", "info", "warning", "error", "critical"])
+    parser.add_argument(
+        "--logging_lvl",
+        type=str,
+        default="info",
+        choices=["debug", "info", "warning", "error", "critical"],
+    )
     parser.add_argument("--logger_out_file", type=str, default=None)
     parser.add_argument("--not_show_progress_bar", action="store_true")
     parser.add_argument("--debug", action="store_true")
@@ -148,7 +169,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if not args.show_tf_cpp_log:
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
     args.show_progress = not args.not_show_progress_bar
     log_lvl = {
@@ -156,14 +177,16 @@ if __name__ == '__main__':
         "info": logging.INFO,
         "warning": logging.WARNING,
         "error": logging.ERROR,
-        "critical": logging.CRITICAL}
+        "critical": logging.CRITICAL,
+    }
     args.logger = logging.getLogger("Trainer")
     if args.debug:
         args.logger.setLevel(logging.DEBUG)
     else:
         args.logger.setLevel(log_lvl[args.logging_lvl])
     formatter = logging.Formatter(
-        '[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S")
+        "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
+    )
     stdhandler = logging.StreamHandler(sys.stdout)
     stdhandler.setFormatter(formatter)
     args.logger.addHandler(stdhandler)
