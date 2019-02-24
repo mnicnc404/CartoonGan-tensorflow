@@ -65,7 +65,7 @@ class Trainer:
             plt.imshow(batch_x[i], cmap="Greys_r")
             plt.axis("off")
         if step is not None:
-            plt.savefig(f"runs/image_at_step_{step}.png")
+            plt.savefig(os.path.join("runs", "image_at_step_{step}.png"))
 
     def pretrain_generator(
         self, pass_vgg=False, learning_rate=1e-5, num_iterations=1000, **kwargs
@@ -73,7 +73,8 @@ class Trainer:
         self.logger.info(
             f"Building dataset using {self.dataset_name} with domain {self.source_domain}..."
         )
-        files = glob(f"./datasets/{self.dataset_name}/train{self.source_domain}/*.*")
+        files = glob(os.path.join(
+            "datasets", self.dataset_name, f"train{self.source_domain}", "*"))
         ds = tf.data.Dataset.from_tensor_slices(files)
 
         def image_processing(filename):
