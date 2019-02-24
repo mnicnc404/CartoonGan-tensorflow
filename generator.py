@@ -5,7 +5,7 @@ from modules import coupled_conv, instance_norm, conv
 
 class Generator(NetBase):
 
-    def __init__(self, input_size=224, base_chs=64, init_params=None, inf_only=False):
+    def __init__(self, input_size=256, base_chs=64, init_params=None, inf_only=False):
         super(Generator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Generator"
@@ -68,10 +68,8 @@ class Generator(NetBase):
             par_pos += 2
             self.logger.debug("%d param tensors traversed" % par_pos)
         if self.to_save_vars is None:
-            # FIXME: there should be a better way of doing this
-            # FIXME: What if build_graph in new Graph?
-            self.to_save_vars = [
-                v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
+            self.to_save_vars = tf.get_collection(
+                tf.GraphKeys.GLOBAL_VARIABLES, scope=self.graph_prefix)
             assert len(self.to_save_vars) == par_pos
         if self.saver is None:
             self.saver = tf.train.Saver(self.to_save_vars)
@@ -84,19 +82,19 @@ def _test():
     import numpy as np
     import logging
     logging.basicConfig(level=logging.DEBUG)
-    size = 224
+    size = 256
     x = tf.placeholder(tf.float32, [2, size, size, 3], name="input")
     net = Generator(input_size=size)
     nx = np.random.rand(2, size, size, 3).astype(np.float32)
-    out_op = net.build_graph(x)
+    out_op = net(x)
     writer = tf.summary.FileWriter(os.path.join("tmp", "gruns"), tf.get_default_graph())
     writer.close()
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         out = sess.run(out_op, {x: nx})
         net.save(sess, "tmp", "lul")
+        net.export("tmp", "lul", True, True, sess)
     logging.debug(out.shape)
-    net.export("tmp", "lul", True, True)
 
 
 if __name__ == '__main__':

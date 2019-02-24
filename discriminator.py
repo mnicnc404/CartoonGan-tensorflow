@@ -37,10 +37,8 @@ class Discriminator(NetBase):
             par_pos += 2
             logging.debug("%d param tensors traversed" % par_pos)
         if self.to_save_vars is None:
-            # FIXME: there should be a better way of doing this
-            # FIXME: What if build_graph in new Graph?
-            self.to_save_vars = [
-                v for v in tf.global_variables() if v.name.startswith(self.graph_prefix)]
+            self.to_save_vars = tf.get_collection(
+                tf.GraphKeys.GLOBAL_VARIABLES, scope=self.graph_prefix)
             assert len(self.to_save_vars) == par_pos
         if self.saver is None:
             self.saver = tf.train.Saver(self.to_save_vars)
