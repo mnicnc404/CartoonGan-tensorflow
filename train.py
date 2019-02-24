@@ -65,7 +65,7 @@ class Trainer:
             plt.imshow(batch_x[i], cmap="Greys_r")
             plt.axis("off")
         if step is not None:
-            plt.savefig(os.path.join("runs", "image_at_step_{step}.png"))
+            plt.savefig(os.path.join("runs", f"image_at_step_{step}.png"))
 
     def pretrain_generator(
         self, pass_vgg=False, learning_rate=1e-5, num_iterations=1000, **kwargs
