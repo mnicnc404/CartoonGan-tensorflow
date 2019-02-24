@@ -3,17 +3,12 @@ import tensorflow as tf
 
 def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
                  mcnt, init_param):
-    has_param = init_param[0] is not None
-    with tf.variable_scope("coupled_conv_%02d" % mcnt):
+    with tf.variable_scope(f"coupled_conv_{mcnt}"):
         pad = (k_size - 1) // 2
-        x = dconv(x, in_chs, k_size, stride, pad, 0, False, 1,
-                  init_param[0] if has_param else None)
-        x = batch_norm(x, in_chs, 1, 1e-5,
-                       *init_param[1:3] if has_param else [None])
-        x = conv(x, in_chs, out_chs, 1, 1, 0, 2, False,
-                 init_param[3] if has_param else None)
-        x = batch_norm(x, out_chs, 3, 1e-5,
-                       *init_param[4:6] if has_param else [None])
+        x = dconv(x, in_chs, k_size, stride, pad, 0, False, 1, init_param[0])
+        x = instance_norm(x, in_chs, 1, 1e-6, *init_param[1:3])
+        x = conv(x, in_chs, out_chs, 1, 1, 0, 2, False, init_param[3])
+        x = instance_norm(x, out_chs, 3, 1e-6, *init_param[4:6])
         return tf.nn.relu(x) if act else x
 
 
@@ -64,7 +59,7 @@ def batch_norm(
         return x
 
 
-def instance_norm(x, chs, mcnt, eps=1e-06, init_g=None, init_b=None):
+def instance_norm(x, chs, mcnt, eps=1e-6, init_g=None, init_b=None):
     with tf.variable_scope(f"in_{mcnt}"):
         gamma = tf.get_variable(
             "gamma", dtype=tf.float32,
