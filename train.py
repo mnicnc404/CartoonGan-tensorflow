@@ -59,13 +59,17 @@ class Trainer:
 
     def _save_generated_images(self, batch_x, step=None):
         batch_size = batch_x.shape[0]
-        fig = plt.figure(figsize=(15, batch_size // 8 / 4 * 9))
+        fig_width = 15
+        num_rows = batch_size // 8 if batch_size >= 8 else 1
+        fig_height = num_rows / 4 * 9 if batch_size >= 8 else 9
+        fig = plt.figure(figsize=(fig_width, fig_height))
         for i in range(batch_size):
-            fig.add_subplot(batch_size // 8, 8, i + 1)
+            fig.add_subplot(num_rows, 8, i + 1)
             plt.imshow(batch_x[i], cmap="Greys_r")
             plt.axis("off")
         if step is not None:
             plt.savefig(os.path.join("runs", f"image_at_step_{step}.png"))
+        plt.close(fig)
 
     def pretrain_generator(
         self, pass_vgg=False, learning_rate=1e-5, num_iterations=1000, **kwargs
