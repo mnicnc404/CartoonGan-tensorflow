@@ -67,9 +67,16 @@ class Trainer:
         fig_width = 15
         num_rows = batch_size // 8 if batch_size >= 8 else 1
         fig_height = num_rows / 4 * 9 if batch_size >= 8 else 9
+
+
+        # FIXME: test only
+        # fig_width = fig_height = 7
+        # num_rows = 1
+
         fig = plt.figure(figsize=(fig_width, fig_height))
         for i in range(batch_size):
             fig.add_subplot(num_rows, 8, i + 1)
+            # fig.add_subplot(num_rows, 1, i + 1) # FIXME: test only
             plt.imshow(batch_x[i], cmap="Greys_r")
             plt.axis("off")
         if image_fname is not None:
@@ -176,32 +183,35 @@ class Trainer:
         ds_b = self.get_dataset(self.dataset_name, self.target_domain, 'train', self.batch_size)
 
         ds_a_iter = ds_a.make_initializable_iterator()
-        real_a = ds_a_iter.get_next()
+        input_a = ds_a_iter.get_next()
 
         ds_b_iter = ds_b.make_initializable_iterator()
-        real_b = ds_b_iter.get_next()
+        input_b = ds_b_iter.get_next()
 
         self.logger.info("Building generator...")
         g = Generator(input_size=self.input_size)
-        fake_b = g(real_a)
+        generated_b = g(input_a)
 
         self.logger.info("Building discriminator...")
         d = Discriminator(input_size=self.input_size)
+        d_real_out = d.build_graph(input_b)
+        d_fake_out = d.build_graph(generated_b, reuse=True)
 
+        self.logger.info("Define content loss using VGG...")
         vgg = FixedVGG()
-        vgg_out = vgg.build_graph(real_a)
-        g_vgg_out = vgg.build_graph(fake_b)
-        content_loss = tf.reduce_mean(tf.abs(vgg_out - g_vgg_out))
-
+        v_real_out = vgg.build_graph(input_b)
+        v_fake_out = vgg.build_graph(generated_b)
+        content_loss = tf.reduce_mean(tf.abs(v_real_out - v_fake_out))
 
         self.logger.info("Define generator/discriminator losses...")
-        g_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(fake_b), fake_b) \
-            + 10 * content_loss
-        d_loss = tf.losses.sigmoid_cross_entropy(multi_class_labels=tf.ones_like(real_b), logits=real_b) \
-            + tf.losses.sigmoid_cross_entropy(multi_class_labels=tf.zeros_like(fake_b), logits=fake_b)
-        # TODO: add smooth loss
+        d_real_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
+        d_fake_loss = tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_fake_out), d_fake_out)
+        d_loss = d_real_loss + d_fake_loss  # TODO: smooth image loss
 
-        self.logger.info("Define optimizors")
+        g_adversarial_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out)
+        g_loss = g_adversarial_loss + 10 * content_loss
+
+        self.logger.info("Define optimizers...")
         g_optimizer = tf.train.AdamOptimizer(1e-4)
         g_train_op = g_optimizer.minimize(g_loss, var_list=g.to_save_vars)
 
@@ -210,6 +220,7 @@ class Trainer:
 
         start = datetime.utcnow()
         with tf.Session() as sess:
+
             sess.run(tf.global_variables_initializer())
             ds_a_iter.initializer.run()
             ds_b_iter.initializer.run()
@@ -217,20 +228,34 @@ class Trainer:
             self.logger.info("Initializing generator using pre-trained weights...")
             g.load(sess, self.save_dir)
 
-            # generate a batch of real images for monitoring G's performance
-            tracking_size = 4
+
+            # real_a = sess.run(input_a)
+            # print(real_a.shape)
+            # self._save_generated_images(
+            #     np.clip(real_a, 0, 1),
+            #     image_fname='real_a.png'
+            # )
+            #
+            # fake_b = sess.run(generated_b, {input_a: real_a})
+            #
+            # self._save_generated_images(
+            #     np.clip(fake_b, 0, 1),
+            #     image_fname='fake_b.png'
+            # )
+
+            tracking_size = 32
             self.logger.info(f"Pick {tracking_size} input images for tracking generator's performance...")
             real_batches = []
 
             for _ in range(int(tracking_size / self.batch_size)):
-                real_batches.append(sess.run(real_a))
+                real_batches.append(sess.run(input_a))
 
             self._save_generated_images(
                 np.clip(np.concatenate(real_batches, axis=0), 0, 1),
                 image_fname='original_image.png'
             )
 
-            num_iterations = 100
+            num_iterations = 1000
             for step in range(num_iterations):
 
                 # update D
@@ -239,11 +264,11 @@ class Trainer:
                 # update G
                 _, g_batch_loss = sess.run([g_train_op, g_loss])
 
-                reporting_steps = 1
+                reporting_steps = 50
                 if step and step % reporting_steps == 0:
                     fake_batches = []
                     for real_batch in real_batches:
-                        fake_batches.append(sess.run(fake_b, {real_a: real_batch}))
+                        fake_batches.append(sess.run(generated_b, {input_a: real_batch}))
 
                     # g.save(sess, self.save_dir, "gan")
                     self._save_generated_images(
@@ -269,6 +294,33 @@ def main(**kwargs):
 
     t.train_gan(**kwargs)
 
+
+
+
+
+    # import tensorflow as tf
+    # import numpy as np
+    # import os
+    # from generator import Generator
+    #
+    # size = 256
+    # x = tf.placeholder(tf.float32, [1, size, size, 3])
+    # g = Generator(input_size=size)
+    #
+    # out_op = g.build_graph(x)
+    # print(out_op.op.name)
+    # print(out_op.op)
+    #
+    # with tf.Session() as sess:
+    #     # sess.run(tf.global_variables_initializer())
+    #
+    #     g.load(sess, 'ckpts', 'pretrain_generator_with_vgg')
+    #
+    #     in_graph_def = tf.get_default_graph().as_graph_def()
+    #     out_graph_def = tf.graph_util.convert_variables_to_constants(
+    #         sess, in_graph_def, [out_op.op.name])
+    #     with tf.gfile.GFile('models/generator.pb', 'wb') as f:
+    #         f.write(out_graph_def.SerializeToString())
 
 
 
