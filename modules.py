@@ -12,6 +12,14 @@ def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
         return tf.nn.relu(x) if act else x
 
 
+def conv_with_in(x, in_chs, out_chs, k_size, stride, act,
+                 mcnt, init_param):
+    with tf.variable_scope(f"conv_with_in_{mcnt}"):
+        x = conv(x, in_chs, out_chs, k_size, 1, 1, False, init_param[0])
+        x = instance_norm(x, out_chs, k_size, 1e-6, *init_param[1:3])
+        return tf.nn.relu(x) if act else x
+
+
 # WARNING: The behavior of batchnorm in GAN is different from normal NN!
 # WARNING: batchnorm should be always in train mode!
 # def batch_norm(
