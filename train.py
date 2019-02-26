@@ -32,6 +32,8 @@ class Trainer:
         batch_size,
         show_progress,
         logger,
+        logdir,
+        save_dir,
         **kwargs,
     ):
         self.dataset_name = dataset_name
@@ -39,6 +41,8 @@ class Trainer:
         self.target_domain = target_domain
         self.input_size = input_size
         self.batch_size = batch_size
+        self.logdir = logdir
+        self.save_dir = save_dir
 
         if logger is not None:
             self.logger = logger
@@ -57,7 +61,7 @@ class Trainer:
         else:
             self.tqdm = tqdm
 
-    def _save_generated_images(self, batch_x, step=None):
+    def _save_generated_images(self, batch_x, image_fname=None):
         batch_size = batch_x.shape[0]
         fig_width = 15
         num_rows = batch_size // 8 if batch_size >= 8 else 1
@@ -67,12 +71,15 @@ class Trainer:
             fig.add_subplot(num_rows, 8, i + 1)
             plt.imshow(batch_x[i], cmap="Greys_r")
             plt.axis("off")
-        if step is not None:
-            plt.savefig(os.path.join("runs", f"image_at_step_{step}.png"))
+        if image_fname is not None:
+            result_dir = "generated_images"
+            if not os.path.exists(result_dir):
+                os.makedirs(result_dir)
+            plt.savefig(os.path.join(result_dir, image_fname))
         plt.close(fig)
 
     def pretrain_generator(
-        self, pass_vgg=False, learning_rate=1e-5, num_iterations=1000, **kwargs
+        self, pass_vgg, learning_rate, num_iterations, tracking_size, reporting_steps, **kwargs
     ):
         self.logger.info(
             f"Building dataset using {self.dataset_name} with domain {self.source_domain}..."
@@ -80,6 +87,7 @@ class Trainer:
         files = glob(os.path.join(
             "datasets", self.dataset_name, f"train{self.source_domain}", "*"))
         ds = tf.data.Dataset.from_tensor_slices(files)
+        self.logger.info(f"{len(files)} images are available.")
 
         def image_processing(filename):
             x = tf.read_file(filename)
@@ -94,7 +102,7 @@ class Trainer:
 
         self.logger.info("Initializing generator...")
         g = Generator(input_size=self.input_size)
-        generated_images = g.build_graph(input_images)
+        generated_images = g(input_images)
 
         if pass_vgg:
             self.logger.info("Initializing VGG for computing content loss...")
@@ -103,6 +111,7 @@ class Trainer:
             g_vgg_out = vgg.build_graph(generated_images)
             content_loss = tf.reduce_mean(tf.abs(vgg_out - g_vgg_out))
         else:
+            self.logger.info("Define content loss without passing VGG...")
             content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
 
         # setup optimizer to update G's variables
@@ -118,32 +127,49 @@ class Trainer:
 
             # load latest checkpoint
             try:
-                g.load(sess, "runs")
+                g.load(sess, self.save_dir)
             except ValueError:
                 pass
 
             # generate a batch of real images for monitoring G's performance
-            real_batch = sess.run(input_images)
+            self.logger.info(f"Pick {tracking_size} input images for tracking generator's performance...")
+            real_batches = []
+            for _ in range(int(tracking_size / self.batch_size)):
+                real_batches.append(sess.run(input_images))
+
+            self._save_generated_images(
+                np.clip(np.concatenate(real_batches, axis=0), 0, 1),
+                image_fname='original_image.png'
+            )
 
             for step in range(num_iterations):
                 _, batch_loss = sess.run([train_op, content_loss])
                 batch_losses.append(batch_loss)
 
-                if step % 1 == 0:
-                    end = datetime.utcnow()
-                    time_use = end - start
+                if step and step % reporting_steps == 0:
+                    fake_batches = []
+                    for real_batch in real_batches:
+                        fake_batches.append(sess.run(generated_images, {input_images: real_batch}))
+
+                    g.save(sess, self.save_dir, "pretrain_generator_with_vgg")
+                    self._save_generated_images(
+                        np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
+                        image_fname=f"generated_image_at_step_{step}.png"
+                    )
 
                     self.logger.info(
-                        f"Step {step}, batch_loss: {batch_loss}, time used: {time_use}"
+                        f"Finish step {step} with batch_loss: {batch_loss}, time used: {datetime.utcnow() - start}"
                     )
-                    fake_batch = sess.run(generated_images, {input_images: real_batch})
-                    g.save(sess, "runs", "generator")
-                    self._save_generated_images(np.clip(fake_batch, 0, 1), step=step)
 
 
 def main(**kwargs):
     t = Trainer(**kwargs)
-    t.pretrain_generator(**kwargs)
+
+    pretrain_kwargs = dict(kwargs)
+    for k, v in kwargs.items():
+        if 'pretrain_' in k:
+            pretrain_kwargs[k.replace('pretrain_', '')] = v
+    t.pretrain_generator(**pretrain_kwargs)
 
 
 if __name__ == "__main__":
@@ -154,12 +180,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
-    parser.add_argument("--pass_vgg", action="store_true")
+    parser.add_argument("--pretrain_pass_vgg", action="store_true")
+    parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
+    parser.add_argument("--pretrain_num_iterations", type=int, default=3000)
+    parser.add_argument("--pretrain_tracking_size", type=int, default=16)
+    parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
     parser.add_argument("--logdir", type=str, default="runs")
-    parser.add_argument("--savedir", type=str, default="ckpts")
+    parser.add_argument("--save_dir", type=str, default="ckpts")
     parser.add_argument(
         "--logging_lvl",
         type=str,
