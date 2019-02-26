@@ -9,6 +9,7 @@ from glob import glob
 from datetime import datetime
 from generator import Generator
 from fixed_vgg import FixedVGG
+from discriminator import Discriminator
 
 
 __no_tqdm__ = False
@@ -78,16 +79,12 @@ class Trainer:
             plt.savefig(os.path.join(result_dir, image_fname))
         plt.close(fig)
 
-    def pretrain_generator(
-        self, pass_vgg, learning_rate, num_iterations, tracking_size, reporting_steps, **kwargs
-    ):
-        self.logger.info(
-            f"Building dataset using {self.dataset_name} with domain {self.source_domain}..."
-        )
+    def get_dataset(self, dataset_name, domain, _type, batch_size):
         files = glob(os.path.join(
-            "datasets", self.dataset_name, f"train{self.source_domain}", "*"))
+            "datasets", dataset_name, f"{_type}{domain}", "*"))
+        self.logger.info(f"{len(files)} domain{domain} images available in {_type}{domain} folder.")
+
         ds = tf.data.Dataset.from_tensor_slices(files)
-        self.logger.info(f"{len(files)} images are available.")
 
         def image_processing(filename):
             x = tf.read_file(filename)
@@ -96,7 +93,17 @@ class Trainer:
             img = tf.cast(img, tf.float32) / 127.5 - 1
             return img
 
-        ds = ds.map(image_processing).shuffle(10000).repeat().batch(self.batch_size)
+        return ds.map(image_processing).shuffle(10000).repeat().batch(batch_size)
+
+
+    def pretrain_generator(
+        self, pass_vgg, learning_rate, num_iterations, tracking_size, reporting_steps, **kwargs
+    ):
+        self.logger.info(
+            f"Building dataset using {self.dataset_name} with domain {self.source_domain}..."
+        )
+
+        ds = self.get_dataset(self.dataset_name, self.source_domain, 'train', self.batch_size)
         ds_iter = ds.make_initializable_iterator()
         input_images = ds_iter.get_next()
 
@@ -161,6 +168,95 @@ class Trainer:
                         f"Finish step {step} with batch_loss: {batch_loss}, time used: {datetime.utcnow() - start}"
                     )
 
+    def train_gan(self, **kwargs):
+        # tf.enable_eager_execution()
+
+        self.logger.info("Building data sets for both source / target domains...")
+        ds_a = self.get_dataset(self.dataset_name, self.source_domain, 'train', self.batch_size)
+        ds_b = self.get_dataset(self.dataset_name, self.target_domain, 'train', self.batch_size)
+
+        ds_a_iter = ds_a.make_initializable_iterator()
+        real_a = ds_a_iter.get_next()
+
+        ds_b_iter = ds_b.make_initializable_iterator()
+        real_b = ds_b_iter.get_next()
+
+        self.logger.info("Building generator...")
+        g = Generator(input_size=self.input_size)
+        fake_b = g(real_a)
+
+        self.logger.info("Building discriminator...")
+        d = Discriminator(input_size=self.input_size)
+
+        vgg = FixedVGG()
+        vgg_out = vgg.build_graph(real_a)
+        g_vgg_out = vgg.build_graph(fake_b)
+        content_loss = tf.reduce_mean(tf.abs(vgg_out - g_vgg_out))
+
+
+        self.logger.info("Define generator/discriminator losses...")
+        g_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(fake_b), fake_b) \
+            + 10 * content_loss
+        d_loss = tf.losses.sigmoid_cross_entropy(multi_class_labels=tf.ones_like(real_b), logits=real_b) \
+            + tf.losses.sigmoid_cross_entropy(multi_class_labels=tf.zeros_like(fake_b), logits=fake_b)
+        # TODO: add smooth loss
+
+        self.logger.info("Define optimizors")
+        g_optimizer = tf.train.AdamOptimizer(1e-4)
+        g_train_op = g_optimizer.minimize(g_loss, var_list=g.to_save_vars)
+
+        d_optimizer = tf.train.AdamOptimizer(1e-4)
+        d_train_op = d_optimizer.minimize(d_loss, var_list=d.to_save_vars)
+
+        start = datetime.utcnow()
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            ds_a_iter.initializer.run()
+            ds_b_iter.initializer.run()
+
+            self.logger.info("Initializing generator using pre-trained weights...")
+            g.load(sess, self.save_dir)
+
+            # generate a batch of real images for monitoring G's performance
+            tracking_size = 4
+            self.logger.info(f"Pick {tracking_size} input images for tracking generator's performance...")
+            real_batches = []
+
+            for _ in range(int(tracking_size / self.batch_size)):
+                real_batches.append(sess.run(real_a))
+
+            self._save_generated_images(
+                np.clip(np.concatenate(real_batches, axis=0), 0, 1),
+                image_fname='original_image.png'
+            )
+
+            num_iterations = 100
+            for step in range(num_iterations):
+
+                # update D
+                _, d_batch_loss = sess.run([d_train_op, d_loss])
+
+                # update G
+                _, g_batch_loss = sess.run([g_train_op, g_loss])
+
+                reporting_steps = 1
+                if step and step % reporting_steps == 0:
+                    fake_batches = []
+                    for real_batch in real_batches:
+                        fake_batches.append(sess.run(fake_b, {real_a: real_batch}))
+
+                    # g.save(sess, self.save_dir, "gan")
+                    self._save_generated_images(
+                        np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
+                        image_fname=f"gan_image_at_step_{step}.png"
+                    )
+
+                    self.logger.info(
+                        f"Finish step {step} with d_batch_loss: {d_batch_loss}, g_batch_loss: {g_batch_loss}, time used: {datetime.utcnow() - start}"
+                    )
+
+
+
 
 def main(**kwargs):
     t = Trainer(**kwargs)
@@ -169,7 +265,11 @@ def main(**kwargs):
     for k, v in kwargs.items():
         if 'pretrain_' in k:
             pretrain_kwargs[k.replace('pretrain_', '')] = v
-    t.pretrain_generator(**pretrain_kwargs)
+    # t.pretrain_generator(**pretrain_kwargs)
+
+    t.train_gan(**kwargs)
+
+
 
 
 if __name__ == "__main__":
