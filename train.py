@@ -62,28 +62,22 @@ class Trainer:
         else:
             self.tqdm = tqdm
 
-    def _save_generated_images(self, batch_x, image_fname=None):
+    def _save_generated_images(self, batch_x, directory="generated_images", image_name=None, num_images_per_row=4):
         batch_size = batch_x.shape[0]
-        fig_width = 15
-        num_rows = batch_size // 8 if batch_size >= 8 else 1
-        fig_height = num_rows / 4 * 9 if batch_size >= 8 else 9
-
-
-        # FIXME: test only
-        # fig_width = fig_height = 7
-        # num_rows = 1
+        fig_width = 7
+        num_rows = batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
+        fig_height = num_rows / 4 * 9 if batch_size >= num_images_per_row else 9
 
         fig = plt.figure(figsize=(fig_width, fig_height))
         for i in range(batch_size):
-            fig.add_subplot(num_rows, 8, i + 1)
-            # fig.add_subplot(num_rows, 1, i + 1) # FIXME: test only
-            plt.imshow(batch_x[i], cmap="Greys_r")
+            fig.add_subplot(num_rows, num_images_per_row, i + 1)
+            # plt.imshow(batch_x[i], cmap="Greys_r")
+            plt.imshow(batch_x[i])
             plt.axis("off")
-        if image_fname is not None:
-            result_dir = "generated_images"
-            if not os.path.exists(result_dir):
-                os.makedirs(result_dir)
-            plt.savefig(os.path.join(result_dir, image_fname))
+        if image_name is not None:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            plt.savefig(os.path.join(directory, image_name))
         plt.close(fig)
 
     def get_dataset(self, dataset_name, domain, _type, batch_size):
@@ -153,7 +147,7 @@ class Trainer:
 
             self._save_generated_images(
                 np.clip(np.concatenate(real_batches, axis=0), 0, 1),
-                image_fname='original_image.png'
+                image_name='sampled_images.png'
             )
 
             for step in range(num_iterations):
@@ -168,7 +162,7 @@ class Trainer:
                     g.save(sess, self.save_dir, "pretrain_generator_with_vgg")
                     self._save_generated_images(
                         np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
-                        image_fname=f"generated_image_at_step_{step}.png"
+                        image_name=f"generated_images_at_step_{step}.png"
                     )
 
                     self.logger.info(
@@ -176,17 +170,20 @@ class Trainer:
                     )
 
     def train_gan(self, **kwargs):
-        # tf.enable_eager_execution()
+        ckpt_name = 'generater_adv_training'
 
         self.logger.info("Building data sets for both source / target domains...")
         ds_a = self.get_dataset(self.dataset_name, self.source_domain, 'train', self.batch_size)
         ds_b = self.get_dataset(self.dataset_name, self.target_domain, 'train', self.batch_size)
+        ds_b_smooth = self.get_dataset(self.dataset_name, self.target_domain + '_smooth', 'train', self.batch_size)
 
         ds_a_iter = ds_a.make_initializable_iterator()
-        input_a = ds_a_iter.get_next()
-
         ds_b_iter = ds_b.make_initializable_iterator()
+        ds_b_smooth_iter = ds_b_smooth.make_initializable_iterator()
+
+        input_a = ds_a_iter.get_next()
         input_b = ds_b_iter.get_next()
+        input_b_smooth = ds_b_smooth_iter.get_next()
 
         self.logger.info("Building generator...")
         g = Generator(input_size=self.input_size)
@@ -196,19 +193,21 @@ class Trainer:
         d = Discriminator(input_size=self.input_size)
         d_real_out = d.build_graph(input_b)
         d_fake_out = d.build_graph(generated_b, reuse=True)
+        d_smooth_out = d.build_graph(input_b_smooth, reuse=True)
 
         self.logger.info("Define content loss using VGG...")
         vgg = FixedVGG()
-        v_real_out = vgg.build_graph(input_b)
+        v_real_out = vgg.build_graph(input_a)
         v_fake_out = vgg.build_graph(generated_b)
         content_loss = tf.reduce_mean(tf.abs(v_real_out - v_fake_out))
 
         self.logger.info("Define generator/discriminator losses...")
-        d_real_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
-        d_fake_loss = tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_fake_out), d_fake_out)
-        d_loss = d_real_loss + d_fake_loss  # TODO: smooth image loss
+        d_real_loss = tf.reduce_mean(tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out))
+        d_fake_loss = tf.reduce_mean(tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_fake_out), d_fake_out))
+        d_smooth_loss = tf.reduce_mean(tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_smooth_out), d_smooth_out))
+        d_loss = d_real_loss + d_fake_loss + d_smooth_loss
 
-        g_adversarial_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out)
+        g_adversarial_loss = tf.reduce_mean(tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out))
         g_loss = g_adversarial_loss + 10 * content_loss
 
         self.logger.info("Define optimizers...")
@@ -224,24 +223,11 @@ class Trainer:
             sess.run(tf.global_variables_initializer())
             ds_a_iter.initializer.run()
             ds_b_iter.initializer.run()
+            ds_b_smooth_iter.initializer.run()
 
             self.logger.info("Initializing generator using pre-trained weights...")
-            g.load(sess, self.save_dir)
-
-
-            # real_a = sess.run(input_a)
-            # print(real_a.shape)
-            # self._save_generated_images(
-            #     np.clip(real_a, 0, 1),
-            #     image_fname='real_a.png'
-            # )
-            #
-            # fake_b = sess.run(generated_b, {input_a: real_a})
-            #
-            # self._save_generated_images(
-            #     np.clip(fake_b, 0, 1),
-            #     image_fname='fake_b.png'
-            # )
+            g.load(sess, self.save_dir, 'pretrain_generator_with_vgg')
+            # g.load(sess, self.save_dir, ckpt_name)  # TODO: use previously trained gan
 
             tracking_size = 32
             self.logger.info(f"Pick {tracking_size} input images for tracking generator's performance...")
@@ -252,44 +238,41 @@ class Trainer:
 
             self._save_generated_images(
                 np.clip(np.concatenate(real_batches, axis=0), 0, 1),
-                image_fname='original_image.png'
+                image_name='sampled_images.png'
             )
 
-            num_iterations = 1000
+            num_iterations = 5000
             for step in range(num_iterations):
 
                 # update D
                 _, d_batch_loss = sess.run([d_train_op, d_loss])
 
                 # update G
-                _, g_batch_loss = sess.run([g_train_op, g_loss])
+                _, g_batch_loss, g_content_loss, g_adv_loss = sess.run([g_train_op, g_loss, content_loss, g_adversarial_loss])
 
-                reporting_steps = 50
+                reporting_steps = 100
                 if step and step % reporting_steps == 0:
                     fake_batches = []
                     for real_batch in real_batches:
                         fake_batches.append(sess.run(generated_b, {input_a: real_batch}))
 
-                    # g.save(sess, self.save_dir, "gan")
+                    g.save(sess, self.save_dir, ckpt_name)
                     self._save_generated_images(
                         np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
-                        image_fname=f"gan_image_at_step_{step}.png"
+                        image_name=f"gan_images_at_step_{step}.png"
                     )
 
-                    self.logger.info(
-                        f"Finish step {step} with d_batch_loss: {d_batch_loss}, g_batch_loss: {g_batch_loss}, time used: {datetime.utcnow() - start}"
-                    )
-
-
+                    res = "Finish step {} with d_batch_loss: {:.2f}, g_batch_loss: {:.2f}, g_content_loss: {:.2f}, g_adv_loss: {:.2f}, time elapsed: {}"
+                    self.logger.info(res.format(step, d_batch_loss, g_batch_loss, g_content_loss, g_adv_loss, datetime.utcnow() - start))
 
 
 def main(**kwargs):
     t = Trainer(**kwargs)
 
-    pretrain_kwargs = dict(kwargs)
-    for k, v in kwargs.items():
-        if 'pretrain_' in k:
-            pretrain_kwargs[k.replace('pretrain_', '')] = v
+    # pretrain_kwargs = dict(kwargs)
+    # for k, v in kwargs.items():
+    #     if 'pretrain_' in k:
+    #         pretrain_kwargs[k.replace('pretrain_', '')] = v
     # t.pretrain_generator(**pretrain_kwargs)
 
     t.train_gan(**kwargs)
