@@ -31,19 +31,32 @@ class Trainer:
         target_domain,
         input_size,
         batch_size,
+        sample_size,
         show_progress,
         logger,
         logdir,
         save_dir,
+        pass_vgg,
+        pretrain_learning_rate,
+        pretrain_num_steps,
+        pretrain_reporting_steps,
+        pretrain_generator_name,
         **kwargs,
     ):
+        self.ascii = os.name == "nt"
         self.dataset_name = dataset_name
         self.source_domain = source_domain
         self.target_domain = target_domain
         self.input_size = input_size
         self.batch_size = batch_size
+        self.sample_size = sample_size
         self.logdir = logdir
         self.save_dir = save_dir
+        self.pass_vgg = pass_vgg
+        self.pretrain_learning_rate = pretrain_learning_rate
+        self.pretrain_num_steps = pretrain_num_steps
+        self.pretrain_reporting_steps = pretrain_reporting_steps
+        self.pretrain_generator_name = pretrain_generator_name
 
         if logger is not None:
             self.logger = logger
@@ -62,16 +75,16 @@ class Trainer:
         else:
             self.tqdm = tqdm
 
-    def _save_generated_images(self, batch_x, directory="generated_images", image_name=None, num_images_per_row=4):
+    def _save_generated_images(self, batch_x, directory="result", image_name=None, num_images_per_row=8):
         batch_size = batch_x.shape[0]
-        fig_width = 7
+        fig_width = 8
         num_rows = batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
-        fig_height = num_rows / 4 * 9 if batch_size >= num_images_per_row else 9
+        # fig_height = num_rows * 7 if batch_size >= num_images_per_row else 7
+        fig_height = 6
 
         fig = plt.figure(figsize=(fig_width, fig_height))
         for i in range(batch_size):
             fig.add_subplot(num_rows, num_images_per_row, i + 1)
-            # plt.imshow(batch_x[i], cmap="Greys_r")
             plt.imshow(batch_x[i])
             plt.axis("off")
         if image_name is not None:
@@ -96,12 +109,12 @@ class Trainer:
 
         return ds.map(image_processing).shuffle(10000).repeat().batch(batch_size)
 
-
-    def pretrain_generator(
-        self, pass_vgg, learning_rate, num_iterations, tracking_size, reporting_steps, **kwargs
-    ):
+    def pretrain_generator(self):
         self.logger.info(
-            f"Building dataset using {self.dataset_name} with domain {self.source_domain}..."
+            f"Pretraining generator with {self.pretrain_num_steps} steps, batch size: {self.batch_size}..."
+        )
+        self.logger.info(
+            f"Building {self.dataset_name} with domain {self.source_domain}..."
         )
 
         ds = self.get_dataset(self.dataset_name, self.source_domain, 'train', self.batch_size)
@@ -109,21 +122,21 @@ class Trainer:
         input_images = ds_iter.get_next()
 
         self.logger.info("Initializing generator...")
-        g = Generator(input_size=self.input_size)
+        g = Generator(input_size=None)
         generated_images = g(input_images)
 
-        if pass_vgg:
+        if self.pass_vgg:
             self.logger.info("Initializing VGG for computing content loss...")
             vgg = FixedVGG()
-            vgg_out = vgg.build_graph(input_images)
-            g_vgg_out = vgg.build_graph(generated_images)
-            content_loss = tf.reduce_mean(tf.abs(vgg_out - g_vgg_out))
+            input_content = vgg.build_graph(input_images)
+            generated_content = vgg.build_graph(generated_images)
+            content_loss = tf.reduce_mean(tf.abs(input_content - generated_content))
         else:
-            self.logger.info("Define content loss without passing VGG...")
+            self.logger.info("Defining content loss without VGG...")
             content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
 
-        # setup optimizer to update G's variables
-        opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        self.logger.info("Setting up optimizer to update generator's parameters...")
+        opt = tf.train.AdamOptimizer(learning_rate=self.pretrain_learning_rate)
         train_op = opt.minimize(content_loss, var_list=g.to_save_vars)
 
         self.logger.info("Start training...")
@@ -133,41 +146,44 @@ class Trainer:
             sess.run(tf.global_variables_initializer())
             ds_iter.initializer.run()
 
-            # load latest checkpoint
+            self.logger.info("Loading previous checkpoints...")
             try:
-                g.load(sess, self.save_dir)
+                g.load(sess, self.save_dir, self.pretrain_generator_name)
+                self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
             except ValueError:
-                pass
+                self.logger.info(f"{self.pretrain_generator_name} checkpoints not found, start from scratch...")
 
-            # generate a batch of real images for monitoring G's performance
-            self.logger.info(f"Pick {tracking_size} input images for tracking generator's performance...")
+            self.logger.info(f"Sampling {self.sample_size} images for tracking generator's performance...")
             real_batches = []
-            for _ in range(int(tracking_size / self.batch_size)):
+            for _ in range(int(self.sample_size / self.batch_size)):
                 real_batches.append(sess.run(input_images))
 
             self._save_generated_images(
                 np.clip(np.concatenate(real_batches, axis=0), 0, 1),
-                image_name='sampled_images.png'
+                image_name='sample_images.png'
             )
 
-            for step in range(num_iterations):
+            for step in range(self.pretrain_num_steps):
                 _, batch_loss = sess.run([train_op, content_loss])
                 batch_losses.append(batch_loss)
 
-                if step and step % reporting_steps == 0:
+                if step and step % self.pretrain_reporting_steps == 0:
                     fake_batches = []
                     for real_batch in real_batches:
                         fake_batches.append(sess.run(generated_images, {input_images: real_batch}))
 
-                    g.save(sess, self.save_dir, "pretrain_generator_with_vgg")
+                    g.save(sess, self.save_dir, self.pretrain_generator_name)
                     self._save_generated_images(
                         np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
                         image_name=f"generated_images_at_step_{step}.png"
                     )
 
                     self.logger.info(
-                        f"Finish step {step} with batch_loss: {batch_loss}, time used: {datetime.utcnow() - start}"
+                        "[Step {step}] batch_loss: {:.3f}, {} elapsed".format(batch_loss, datetime.utcnow() - start)
                     )
+
+                    with open("result/batch_losses.tsv", "a") as f:
+                        f.write(step, '\t', batch_loss + '\n')
 
     def train_gan(self, **kwargs):
         ckpt_name = 'generater_adv_training'
@@ -229,11 +245,11 @@ class Trainer:
             g.load(sess, self.save_dir, 'pretrain_generator_with_vgg')
             # g.load(sess, self.save_dir, ckpt_name)  # TODO: use previously trained gan
 
-            tracking_size = 32
-            self.logger.info(f"Pick {tracking_size} input images for tracking generator's performance...")
+            sample_size = 32
+            self.logger.info(f"Pick {sample_size} input images for tracking generator's performance...")
             real_batches = []
 
-            for _ in range(int(tracking_size / self.batch_size)):
+            for _ in range(int(sample_size / self.batch_size)):
                 real_batches.append(sess.run(input_a))
 
             self._save_generated_images(
@@ -241,8 +257,8 @@ class Trainer:
                 image_name='sampled_images.png'
             )
 
-            num_iterations = 5000
-            for step in range(num_iterations):
+            num_steps = 5000
+            for step in range(num_steps):
 
                 # update D
                 _, d_batch_loss = sess.run([d_train_op, d_loss])
@@ -268,43 +284,9 @@ class Trainer:
 
 def main(**kwargs):
     t = Trainer(**kwargs)
+    t.pretrain_generator()
 
-    # pretrain_kwargs = dict(kwargs)
-    # for k, v in kwargs.items():
-    #     if 'pretrain_' in k:
-    #         pretrain_kwargs[k.replace('pretrain_', '')] = v
-    # t.pretrain_generator(**pretrain_kwargs)
-
-    t.train_gan(**kwargs)
-
-
-
-
-
-    # import tensorflow as tf
-    # import numpy as np
-    # import os
-    # from generator import Generator
-    #
-    # size = 256
-    # x = tf.placeholder(tf.float32, [1, size, size, 3])
-    # g = Generator(input_size=size)
-    #
-    # out_op = g.build_graph(x)
-    # print(out_op.op.name)
-    # print(out_op.op)
-    #
-    # with tf.Session() as sess:
-    #     # sess.run(tf.global_variables_initializer())
-    #
-    #     g.load(sess, 'ckpts', 'pretrain_generator_with_vgg')
-    #
-    #     in_graph_def = tf.get_default_graph().as_graph_def()
-    #     out_graph_def = tf.graph_util.convert_variables_to_constants(
-    #         sess, in_graph_def, [out_op.op.name])
-    #     with tf.gfile.GFile('models/generator.pb', 'wb') as f:
-    #         f.write(out_graph_def.SerializeToString())
-
+    # t.train_gan(**kwargs)
 
 
 if __name__ == "__main__":
@@ -316,15 +298,18 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--sample_size", type=int, default=32)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
-    parser.add_argument("--pretrain_pass_vgg", action="store_true")
+    parser.add_argument("--num_steps", type=int, default=600000)
+    parser.add_argument("--reporting_steps", type=int, default=100)
+    parser.add_argument("--pass_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
-    parser.add_argument("--pretrain_num_iterations", type=int, default=3000)
-    parser.add_argument("--pretrain_tracking_size", type=int, default=16)
+    parser.add_argument("--pretrain_num_steps", type=int, default=60000)
     parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
     parser.add_argument("--logdir", type=str, default="runs")
     parser.add_argument("--save_dir", type=str, default="ckpts")
+    parser.add_argument("--pretrain_generator_name", type=str, default="pretrain_generator")
     parser.add_argument(
         "--logging_lvl",
         type=str,
