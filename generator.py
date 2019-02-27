@@ -1,6 +1,6 @@
 import tensorflow as tf
 from net_base import NetBase
-from modules import coupled_conv, instance_norm, conv
+from modules import conv_with_in, instance_norm, conv
 
 
 class Generator(NetBase):
@@ -31,23 +31,23 @@ class Generator(NetBase):
                     else:
                         stride = 1
                     self.logger.debug("downsample conv: %d, %d" % (prev_chs, chs))
-                    x = coupled_conv(x, prev_chs, chs, 3, stride, True, mcnt,
-                                     self.get_params(par_pos, par_pos + 6))
+                    x = conv_with_in(x, prev_chs, chs, 3, stride, True, mcnt,
+                                     self.get_params(par_pos, par_pos + 3))
                     prev_chs = chs
-                    par_pos += 6
+                    par_pos += 3
                     mcnt += 1
             # ResBlock
             with tf.variable_scope("ResBlock", reuse=reuse):
                 for _ in range(8):
                     x1 = x
                     self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
-                    x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     self.get_params(par_pos, par_pos + 6))
-                    x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt + 1,
-                                     self.get_params(par_pos + 6, par_pos + 12))
+                    x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
+                                     self.get_params(par_pos, par_pos + 3))
+                    x = conv_with_in(x, prev_chs, chs, 3, 1, False, mcnt + 1,
+                                     self.get_params(par_pos + 3, par_pos + 6))
                     x += x1  # no relu as suggested by Sam Gross and Michael Wilber
                     mcnt += 2
-                    par_pos += 12
+                    par_pos += 6
             # Upsample
             with tf.variable_scope("Upsample", reuse=reuse):
                 cur_size = self.input_size // 4
@@ -57,9 +57,9 @@ class Generator(NetBase):
                         chs /= 2
                         x = tf.image.resize_bilinear(x, (cur_size, cur_size))
                     self.logger.debug("upsample conv: %d, %d, size: %d" % (prev_chs, chs, cur_size))
-                    x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     self.get_params(par_pos, par_pos + 6))
-                    par_pos += 6
+                    x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
+                                     self.get_params(par_pos, par_pos + 3))
+                    par_pos += 3
                     mcnt += 1
                     prev_chs = chs
             # Final conv
