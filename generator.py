@@ -5,7 +5,7 @@ from modules import conv_with_in, instance_norm, conv
 
 class Generator(NetBase):
 
-    def __init__(self, input_size=256, base_chs=64, init_params=None, inf_only=False):
+    def __init__(self, input_size=None, base_chs=64, init_params=None, inf_only=False):
         super(Generator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Generator"
@@ -13,7 +13,9 @@ class Generator(NetBase):
     def build_graph(self, x, reuse=False):
         with tf.variable_scope(self.graph_prefix, reuse=reuse):
             chs = self.base_chs
+            input_shape = tf.shape(x)
             self.logger.debug("initial conv: 3, %d" % chs)
+            self.logger.debug(f"input_shape: {input_shape}")
             # Init conv
             x = conv(x, 3, chs, 5, 1, 2, 0, False, self.get_params(0))
             x = tf.nn.relu(instance_norm(
@@ -50,13 +52,15 @@ class Generator(NetBase):
                     par_pos += 6
             # Upsample
             with tf.variable_scope("Upsample", reuse=reuse):
-                cur_size = self.input_size // 4
+                cur_h = input_shape[1] // 4
+                cur_w = input_shape[2] // 4
                 for i in range(4):
                     if i % 2 == 0:
-                        cur_size *= 2
+                        cur_h *= 2
+                        cur_w *= 2
                         chs /= 2
-                        x = tf.image.resize_bilinear(x, (cur_size, cur_size))
-                    self.logger.debug("upsample conv: %d, %d, size: %d" % (prev_chs, chs, cur_size))
+                        x = tf.image.resize_bilinear(x, (cur_h, cur_w))
+                    self.logger.debug(f"upsample conv: {prev_chs}, {chs}, height: {cur_h}, width: {cur_w}")
                     x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
                                      self.get_params(par_pos, par_pos + 3))
                     par_pos += 3
@@ -82,11 +86,12 @@ def _test():
     import numpy as np
     import logging
     logging.basicConfig(level=logging.DEBUG)
-    size = 256
-    x = tf.placeholder(tf.float32, [2, size, size, 3], name="input")
+    size = None
+    shape = [1, size, size, 3]
+    x = tf.placeholder(tf.float32, shape, name="input")
     net = Generator(input_size=size)
-    nx = np.random.rand(2, size, size, 3).astype(np.float32)
     out_op = net(x)
+    nx = np.random.rand(1, 225, 150, 3).astype(np.float32)
     writer = tf.summary.FileWriter(os.path.join("tmp", "gruns"), tf.get_default_graph())
     writer.close()
     with tf.Session() as sess:
@@ -94,7 +99,7 @@ def _test():
         out = sess.run(out_op, {x: nx})
         net.save(sess, "tmp", "lul")
         net.export("tmp", "lul", True, True, sess)
-    logging.debug(out.shape)
+    logging.debug(f'out.shape: {out.shape}')
 
 
 if __name__ == '__main__':
