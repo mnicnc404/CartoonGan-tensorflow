@@ -137,6 +137,8 @@ class Trainer:
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
             content_loss = tf.reduce_mean(tf.abs(input_content - generated_content))
+            content_loss += tf.reduce_mean(tf.abs(input_images - generated_images))
+
         else:
             self.logger.info("Defining content loss without VGG...")
             content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
@@ -292,14 +294,17 @@ class Trainer:
                         res.format(step, d_batch_loss, g_batch_loss, g_content_loss, g_adv_loss, time_elapsed))
 
                     with open("result/gan_losses.tsv", "a") as f:
-                        f.write(f'{step}\t{d_loss}\t{g_loss}\t{g_content_loss}\t{g_adv_loss}\t{time_elapsed}\n')
+
+                        cols = [step, d_batch_loss, g_batch_loss, g_content_loss, g_adv_loss, time_elapsed]
+                        s = '\t'.join([str(col) for col in cols])
+                        f.write(s + '\n')
 
 
 def main(**kwargs):
     t = Trainer(**kwargs)
-    # t.pretrain_generator()
+    t.pretrain_generator()
 
-    t.train_gan()
+    # t.train_gan()
 
 
 if __name__ == "__main__":
