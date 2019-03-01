@@ -77,10 +77,10 @@ class Trainer:
 
     def _save_generated_images(self, batch_x, directory="result", image_name=None, num_images_per_row=8):
         batch_size = batch_x.shape[0]
-        fig_width = 8
+        fig_width = 12
         num_rows = batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
         # fig_height = num_rows * 7 if batch_size >= num_images_per_row else 7
-        fig_height = 6
+        fig_height = 8
 
         fig = plt.figure(figsize=(fig_width, fig_height))
         for i in range(batch_size):
@@ -179,11 +179,12 @@ class Trainer:
                     )
 
                     self.logger.info(
-                        "[Step {step}] batch_loss: {:.3f}, {} elapsed".format(batch_loss, datetime.utcnow() - start)
+                        "[Step {}] batch_loss: {:.3f}, {} elapsed".format(
+                            step, batch_loss, datetime.utcnow() - start)
                     )
 
                     with open("result/batch_losses.tsv", "a") as f:
-                        f.write(step, '\t', batch_loss + '\n')
+                        f.write(f'{step}\t{batch_loss}\n')
 
     def train_gan(self, **kwargs):
         ckpt_name = 'generater_adv_training'
