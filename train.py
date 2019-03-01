@@ -32,6 +32,8 @@ class Trainer:
         input_size,
         batch_size,
         sample_size,
+        num_steps,
+        reporting_steps,
         show_progress,
         logger,
         logdir,
@@ -41,6 +43,7 @@ class Trainer:
         pretrain_num_steps,
         pretrain_reporting_steps,
         pretrain_generator_name,
+        generator_name,
         **kwargs,
     ):
         self.ascii = os.name == "nt"
@@ -50,6 +53,8 @@ class Trainer:
         self.input_size = input_size
         self.batch_size = batch_size
         self.sample_size = sample_size
+        self.num_steps = num_steps
+        self.reporting_steps = reporting_steps
         self.logdir = logdir
         self.save_dir = save_dir
         self.pass_vgg = pass_vgg
@@ -57,6 +62,7 @@ class Trainer:
         self.pretrain_num_steps = pretrain_num_steps
         self.pretrain_reporting_steps = pretrain_reporting_steps
         self.pretrain_generator_name = pretrain_generator_name
+        self.generator_name = generator_name
 
         if logger is not None:
             self.logger = logger
@@ -187,7 +193,6 @@ class Trainer:
                         f.write(f'{step}\t{batch_loss}\n')
 
     def train_gan(self, **kwargs):
-        ckpt_name = 'generater_adv_training'
 
         self.logger.info("Building data sets for both source / target domains...")
         ds_a = self.get_dataset(self.dataset_name, self.source_domain, 'train', self.batch_size)
@@ -242,52 +247,59 @@ class Trainer:
             ds_b_iter.initializer.run()
             ds_b_smooth_iter.initializer.run()
 
-            self.logger.info("Initializing generator using pre-trained weights...")
-            g.load(sess, self.save_dir, 'pretrain_generator_with_vgg')
-            # g.load(sess, self.save_dir, ckpt_name)  # TODO: use previously trained gan
+            self.logger.info("Loading previous checkpoints...")
+            try:
+                g.load(sess, self.save_dir, self.generator_name)
+                self.logger.info(f"Successfully loaded {self.generator_name}...")
+            except ValueError:
+                self.logger.info("Previous checkpoint not found, using pre-trained weights...")
+                g.load(sess, self.save_dir, self.pretrain_generator_name)
 
-            sample_size = 32
-            self.logger.info(f"Pick {sample_size} input images for tracking generator's performance...")
+            self.logger.info(f"Sampling {self.sample_size} images for tracking generator's performance...")
             real_batches = []
 
-            for _ in range(int(sample_size / self.batch_size)):
+            for _ in range(int(self.sample_size / self.batch_size)):
                 real_batches.append(sess.run(input_a))
 
             self._save_generated_images(
                 np.clip(np.concatenate(real_batches, axis=0), 0, 1),
-                image_name='sampled_images.png'
+                image_name='sample_images.png'
             )
 
-            num_steps = 5000
-            for step in range(num_steps):
+            for step in range(self.num_steps):
 
                 # update D
                 _, d_batch_loss = sess.run([d_train_op, d_loss])
 
                 # update G
-                _, g_batch_loss, g_content_loss, g_adv_loss = sess.run([g_train_op, g_loss, content_loss, g_adversarial_loss])
+                _, g_batch_loss, g_content_loss, g_adv_loss = sess.run(
+                    [g_train_op, g_loss, content_loss, g_adversarial_loss])
 
-                reporting_steps = 100
-                if step and step % reporting_steps == 0:
+                if step and step % self.reporting_steps == 0:
                     fake_batches = []
                     for real_batch in real_batches:
                         fake_batches.append(sess.run(generated_b, {input_a: real_batch}))
 
-                    g.save(sess, self.save_dir, ckpt_name)
+                    g.save(sess, self.save_dir, self.generator_name)
                     self._save_generated_images(
                         np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
                         image_name=f"gan_images_at_step_{step}.png"
                     )
 
-                    res = "Finish step {} with d_batch_loss: {:.2f}, g_batch_loss: {:.2f}, g_content_loss: {:.2f}, g_adv_loss: {:.2f}, time elapsed: {}"
-                    self.logger.info(res.format(step, d_batch_loss, g_batch_loss, g_content_loss, g_adv_loss, datetime.utcnow() - start))
+                    time_elapsed = datetime.utcnow() - start
+                    res = "[Step {}] d_loss: {:.2f}, g_loss: {:.2f}, c_loss: {:.2f}, adv_loss: {:.2f}, time elapsed: {}"
+                    self.logger.info(
+                        res.format(step, d_batch_loss, g_batch_loss, g_content_loss, g_adv_loss, time_elapsed))
+
+                    with open("result/gan_losses.tsv", "a") as f:
+                        f.write(f'{step}\t{d_loss}\t{g_loss}\t{g_content_loss}\t{g_adv_loss}\t{time_elapsed}\n')
 
 
 def main(**kwargs):
     t = Trainer(**kwargs)
-    t.pretrain_generator()
+    # t.pretrain_generator()
 
-    # t.train_gan(**kwargs)
+    t.train_gan()
 
 
 if __name__ == "__main__":
@@ -311,6 +323,7 @@ if __name__ == "__main__":
     parser.add_argument("--logdir", type=str, default="runs")
     parser.add_argument("--save_dir", type=str, default="ckpts")
     parser.add_argument("--pretrain_generator_name", type=str, default="pretrain_generator")
+    parser.add_argument("--generator_name", type=str, default="generator")
     parser.add_argument(
         "--logging_lvl",
         type=str,
