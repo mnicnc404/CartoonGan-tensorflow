@@ -302,9 +302,15 @@ class Trainer:
 
 def main(**kwargs):
     t = Trainer(**kwargs)
-    t.pretrain_generator()
 
-    # t.train_gan()
+    mode = kwargs["mode"]
+    if mode == "full":
+        t.pretrain_generator()
+        t.train_gan()
+    elif mode == "pretrain":
+        t.pretrain_generator()
+    elif mode == "gan":
+        t.train_gan(())
 
 
 if __name__ == "__main__":
@@ -313,6 +319,8 @@ if __name__ == "__main__":
     import logging
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="full",
+                        choices=["full", "pretrain", "gan"])
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
