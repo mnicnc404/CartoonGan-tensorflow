@@ -39,6 +39,7 @@ class Trainer:
         show_progress,
         logger_name,
         logdir,
+        result_dir,
         save_dir,
         pass_vgg,
         pretrain_learning_rate,
@@ -59,6 +60,7 @@ class Trainer:
         self.reporting_steps = reporting_steps
         self.content_lambda = content_lambda
         self.logdir = logdir
+        self.result_dir = result_dir
         self.save_dir = save_dir
         self.pass_vgg = pass_vgg
         self.pretrain_learning_rate = pretrain_learning_rate
@@ -75,22 +77,21 @@ class Trainer:
             self.tqdm = tqdm
 
     def _save_generated_images(
-        self, batch_x, directory="result", image_name=None, num_images_per_row=8
+        self, batch_x, image_name=None, num_images_per_row=8
     ):
         batch_size = batch_x.shape[0]
-        fig_width = 12
         num_rows = (
             batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
         )
-        # fig_height = num_rows * 7 if batch_size >= num_images_per_row else 7
+        fig_width = 12
         fig_height = 8
-
         fig = plt.figure(figsize=(fig_width, fig_height))
         for i in range(batch_size):
             fig.add_subplot(num_rows, num_images_per_row, i + 1)
             plt.imshow(batch_x[i])
             plt.axis("off")
         if image_name is not None:
+            directory = self.result_dir
             if not os.path.exists(directory):
                 os.makedirs(directory)
             plt.savefig(os.path.join(directory, image_name))
@@ -99,7 +100,7 @@ class Trainer:
     def get_dataset(self, dataset_name, domain, _type, batch_size):
         files = glob(os.path.join("datasets", dataset_name, f"{_type}{domain}", "*"))
         self.logger.info(
-            f"{len(files)} domain{domain} images available in {_type}{domain} folder."
+            f"Found {len(files)} domain{domain} images in {_type}{domain} folder."
         )
 
         ds = tf.data.Dataset.from_tensor_slices(files)
@@ -336,8 +337,8 @@ class Trainer:
                     with open("result/gan_losses.tsv", "a") as f:
 
                         f.write(
-                            f"{step}\t{d_loss}\t{g_loss}\t{g_content_loss}\t"
-                            f"{g_adv_loss}\t{time_elapsed}\n"
+                            f"{step}\t{d_batch_loss}\t{g_batch_loss}\t"
+                            f"{g_content_loss}\t{g_adv_loss}\t{time_elapsed}\n"
                         )
 
 
@@ -375,6 +376,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_num_steps", type=int, default=60000)
     parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
     parser.add_argument("--logdir", type=str, default="runs")
+    parser.add_argument("--result_dir", type=str, default="result")
     parser.add_argument("--save_dir", type=str, default="ckpts")
     parser.add_argument(
         "--pretrain_generator_name", type=str, default="pretrain_generator"
