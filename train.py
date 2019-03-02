@@ -174,9 +174,9 @@ class Trainer:
             self.logger.info(
                 f"Sampling {self.sample_size} images for tracking generator's performance..."
             )
-            real_batches = []
-            for _ in range(int(self.sample_size / self.batch_size)):
-                real_batches.append(sess.run(input_images))
+            real_batches = [
+                sess.run(input_images) for _ in range(self.sample_size//self.batch_size)
+            ]
 
             self._save_generated_images(
                 (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
@@ -188,11 +188,11 @@ class Trainer:
                 batch_losses.append(batch_loss)
 
                 if step % self.pretrain_reporting_steps == 0:
-                    fake_batches = []
-                    for real_batch in real_batches:
-                        fake_batches.append(
-                            sess.run(generated_images, {input_images: real_batch})
-                        )
+                    fake_batches = [
+                        sess.run(
+                            generated_images, {input_images: real_b}
+                        ) for real_b in real_batches
+                    ]
 
                     g.save(sess, self.save_dir, self.pretrain_generator_name)
                     self._save_generated_images(
@@ -291,10 +291,8 @@ class Trainer:
             self.logger.info(
                 f"Sampling {self.sample_size} images for tracking generator's performance..."
             )
-            real_batches = []
 
-            for _ in range(int(self.sample_size / self.batch_size)):
-                real_batches.append(sess.run(input_a))
+            real_batches = [sess.run(input_a) for _ in range(self.sample_size//self.batch_size)]
 
             self._save_generated_images(
                 (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
@@ -312,11 +310,9 @@ class Trainer:
                 )
 
                 if step % self.reporting_steps == 0:
-                    fake_batches = []
-                    for real_batch in real_batches:
-                        fake_batches.append(
-                            sess.run(generated_b, {input_a: real_batch})
-                        )
+                    fake_batches = [
+                        sess.run(generated_b, {input_a: real_b}) for real_b in real_batches
+                    ]
 
                     g.save(sess, self.save_dir, self.generator_name)
                     self._save_generated_images(
