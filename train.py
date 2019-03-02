@@ -137,7 +137,6 @@ class Trainer:
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
             content_loss = tf.reduce_mean(tf.abs(input_content - generated_content))
-            content_loss += tf.reduce_mean(tf.abs(input_images - generated_images))
 
         else:
             self.logger.info("Defining content loss without VGG...")
