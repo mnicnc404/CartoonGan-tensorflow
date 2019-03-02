@@ -136,6 +136,7 @@ class Trainer:
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
             content_loss = tf.reduce_mean(tf.abs(input_content - generated_content))
+
         else:
             self.logger.info("Defining content loss without VGG...")
             content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
@@ -331,6 +332,7 @@ class Trainer:
                     )
 
                     with open("result/gan_losses.tsv", "a") as f:
+
                         f.write(
                             f"{step}\t{d_loss}\t{g_loss}\t{g_content_loss}\t"
                             f"{g_adv_loss}\t{time_elapsed}\n"
@@ -339,9 +341,15 @@ class Trainer:
 
 def main(**kwargs):
     t = Trainer(**kwargs)
-    # t.pretrain_generator()
 
-    t.train_gan()
+    mode = kwargs["mode"]
+    if mode == "full":
+        t.pretrain_generator()
+        t.train_gan()
+    elif mode == "pretrain":
+        t.pretrain_generator()
+    elif mode == "gan":
+        t.train_gan()
 
 
 if __name__ == "__main__":
@@ -349,6 +357,8 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="full",
+                        choices=["full", "pretrain", "gan"])
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
