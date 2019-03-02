@@ -1,12 +1,13 @@
 import os
+from datetime import datetime
+from glob import glob
+import logging
 import numpy as np
 import tensorflow as tf
 import matplotlib as mpl
 
 mpl.use("agg")
 import matplotlib.pyplot as plt
-from glob import glob
-from datetime import datetime
 from generator import Generator
 from fixed_vgg import FixedVGG
 from discriminator import Discriminator
@@ -35,7 +36,7 @@ class Trainer:
         num_steps,
         reporting_steps,
         show_progress,
-        logger,
+        logger_name,
         logdir,
         save_dir,
         pass_vgg,
@@ -64,17 +65,7 @@ class Trainer:
         self.pretrain_generator_name = pretrain_generator_name
         self.generator_name = generator_name
 
-        if logger is not None:
-            self.logger = logger
-        else:
-            import logging
-
-            self.logger = logging.getLogger()
-            self.logger.setLevel(logging.info)
-            self.logger.warning(
-                "You are using the root logger, which has bad a format."
-            )
-            self.logger.warning("Please consider passing a better logger.")
+        self.logger = logging.getLogger(logger_name)
 
         if not show_progress or __no_tqdm__:
             self.tqdm = _tqdm
@@ -166,9 +157,10 @@ class Trainer:
                 self.logger.info(
                     f"Successfully loaded {self.pretrain_generator_name}..."
                 )
-            except ValueError:
+            except tf.errors.NotFoundError:
                 self.logger.info(
-                    f"{self.pretrain_generator_name} checkpoints not found, start from scratch..."
+                    f"{self.pretrain_generator_name} checkpoints not found, "
+                    "starting from scratch..."
                 )
 
             self.logger.info(
@@ -219,7 +211,7 @@ class Trainer:
             self.dataset_name, self.target_domain, "train", self.batch_size
         )
         ds_b_smooth = self.get_dataset(
-            self.dataset_name, self.target_domain + "_smooth", "train", self.batch_size
+            self.dataset_name, f"{self.target_domain}_smooth", "train", self.batch_size
         )
 
         ds_a_iter = ds_a.make_initializable_iterator()
@@ -263,7 +255,7 @@ class Trainer:
         )
         g_loss = g_adversarial_loss + 10 * content_loss
 
-        self.logger.info("Define optimizers...")
+        self.logger.info("Defining optimizers...")
         g_optimizer = tf.train.AdamOptimizer(1e-4)
         g_train_op = g_optimizer.minimize(g_loss, var_list=g.to_save_vars)
 
@@ -282,11 +274,15 @@ class Trainer:
             try:
                 g.load(sess, self.save_dir, self.generator_name)
                 self.logger.info(f"Successfully loaded {self.generator_name}...")
-            except ValueError:
+            except tf.errors.NotFoundError:
                 self.logger.info(
                     "Previous checkpoint not found, using pre-trained weights..."
                 )
-                g.load(sess, self.save_dir, self.pretrain_generator_name)
+                try:
+                    g.load(sess, self.save_dir, self.pretrain_generator_name)
+                    self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
+                except tf.errors.NotFoundError:
+                    self.logger.info(f"{self.pretrain_generator_name}, training from scratch...")
 
             self.logger.info(
                 f"Sampling {self.sample_size} images for tracking generator's performance..."
@@ -351,7 +347,6 @@ def main(**kwargs):
 if __name__ == "__main__":
     import argparse
     import sys
-    import logging
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
@@ -396,20 +391,21 @@ if __name__ == "__main__":
         "error": logging.ERROR,
         "critical": logging.CRITICAL,
     }
-    args.logger = logging.getLogger("Trainer")
+    args.logger_name = "Trainer"
+    logger = logging.getLogger(args.logger_name)
     if args.debug:
-        args.logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     else:
-        args.logger.setLevel(log_lvl[args.logging_lvl])
+        logger.setLevel(log_lvl[args.logging_lvl])
     formatter = logging.Formatter(
         "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
     )
     stdhandler = logging.StreamHandler(sys.stdout)
     stdhandler.setFormatter(formatter)
-    args.logger.addHandler(stdhandler)
+    logger.addHandler(stdhandler)
     if args.logger_out_file is not None:
         fhandler = logging.StreamHandler(open(args.logger_out_file, "a"))
         fhandler.setFormatter(formatter)
-        args.logger.addHandler(fhandler)
+        args.addHandler(fhandler)
     kwargs = vars(args)
     main(**kwargs)
