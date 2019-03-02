@@ -13,3 +13,4 @@ datasets/
 .ipynb_checkpoints/
 runs/
 result/
+ckpts/
