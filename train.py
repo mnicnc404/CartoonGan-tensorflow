@@ -199,12 +199,12 @@ class Trainer:
                         )
                     )
 
-                    with open("result/batch_losses.tsv", "a") as f:
+                    with open(os.path.join("result", "batch_losses.tsv"), "a") as f:
                         f.write(f"{step}\t{batch_loss}\n")
 
     def train_gan(self, **kwargs):
 
-        self.logger.info("Building data sets for both source / target domains...")
+        self.logger.info("Building data sets for both source/target domains...")
         ds_a = self.get_dataset(
             self.dataset_name, self.source_domain, "train", self.batch_size
         )
