@@ -35,6 +35,7 @@ class Trainer:
         sample_size,
         num_steps,
         reporting_steps,
+        content_lambda,
         show_progress,
         logger_name,
         logdir,
@@ -56,6 +57,7 @@ class Trainer:
         self.sample_size = sample_size
         self.num_steps = num_steps
         self.reporting_steps = reporting_steps
+        self.content_lambda = content_lambda
         self.logdir = logdir
         self.save_dir = save_dir
         self.pass_vgg = pass_vgg
@@ -254,7 +256,7 @@ class Trainer:
         g_adversarial_loss = tf.reduce_mean(
             tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out)
         )
-        g_loss = g_adversarial_loss + 10 * content_loss
+        g_loss = g_adversarial_loss + self.content_lambda * content_loss
 
         self.logger.info("Defining optimizers...")
         g_optimizer = tf.train.AdamOptimizer(1e-4)
@@ -367,6 +369,7 @@ if __name__ == "__main__":
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
+    parser.add_argument("--content_lambda", type=float, default=0.01)
     parser.add_argument("--pass_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
     parser.add_argument("--pretrain_num_steps", type=int, default=60000)
