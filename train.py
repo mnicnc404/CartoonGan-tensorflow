@@ -179,15 +179,15 @@ class Trainer:
             ]
 
             self._save_generated_images(
-                np.clip(np.concatenate(real_batches, axis=0), 0, 1),
+                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
                 image_name="sample_images.png",
             )
 
-            for step in range(self.pretrain_num_steps):
+            for step in range(1, self.pretrain_num_steps + 1):
                 _, batch_loss = sess.run([train_op, content_loss])
                 batch_losses.append(batch_loss)
 
-                if step and step % self.pretrain_reporting_steps == 0:
+                if step % self.pretrain_reporting_steps == 0:
                     fake_batches = [
                         sess.run(
                             generated_images, {input_images: real_b}
@@ -196,7 +196,7 @@ class Trainer:
 
                     g.save(sess, self.save_dir, self.pretrain_generator_name)
                     self._save_generated_images(
-                        np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
+                        (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
                         image_name=f"generated_images_at_step_{step}.png",
                     )
 
@@ -295,11 +295,11 @@ class Trainer:
             real_batches = [sess.run(input_a) for _ in range(self.sample_size//self.batch_size)]
 
             self._save_generated_images(
-                np.clip(np.concatenate(real_batches, axis=0), 0, 1),
+                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
                 image_name="sample_images.png",
             )
 
-            for step in range(self.num_steps):
+            for step in range(1, self.num_steps + 1):
 
                 # update D
                 _, d_batch_loss = sess.run([d_train_op, d_loss])
@@ -309,13 +309,14 @@ class Trainer:
                     [g_train_op, g_loss, content_loss, g_adversarial_loss]
                 )
 
-                if step and step % self.reporting_steps == 0:
+                if step % self.reporting_steps == 0:
                     fake_batches = [
                         sess.run(generated_b, {input_a: real_b}) for real_b in real_batches
                     ]
+
                     g.save(sess, self.save_dir, self.generator_name)
                     self._save_generated_images(
-                        np.clip(np.concatenate(fake_batches, axis=0), 0, 1),
+                        (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
                         image_name=f"gan_images_at_step_{step}.png",
                     )
 
