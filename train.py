@@ -160,7 +160,7 @@ class Trainer:
                 self.logger.info(
                     f"Successfully loaded {self.pretrain_generator_name}..."
                 )
-            except tf.errors.NotFoundError:
+            except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
                     f"{self.pretrain_generator_name} checkpoints not found, "
                     "starting from scratch..."
@@ -277,14 +277,14 @@ class Trainer:
             try:
                 g.load(sess, self.save_dir, self.generator_name)
                 self.logger.info(f"Successfully loaded {self.generator_name}...")
-            except tf.errors.NotFoundError:
+            except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
                     "Previous checkpoint not found, using pre-trained weights..."
                 )
                 try:
                     g.load(sess, self.save_dir, self.pretrain_generator_name)
                     self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
-                except tf.errors.NotFoundError:
+                except (tf.errors.NotFoundError, ValueError):
                     self.logger.info(f"{self.pretrain_generator_name}, training from scratch...")
 
             self.logger.info(
