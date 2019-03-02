@@ -353,7 +353,7 @@ def main(**kwargs):
     elif mode == "pretrain":
         t.pretrain_generator()
     elif mode == "gan":
-        t.train_gan(())
+        t.train_gan()
 
 
 if __name__ == "__main__":
