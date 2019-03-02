@@ -10,11 +10,12 @@ class Discriminator(NetBase):
         super(Discriminator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Discriminator"
+        self.logger = logging.getLogger(self.graph_prefix)
 
     def build_graph(self, x, reuse=False):
         with tf.variable_scope(self.graph_prefix, reuse=reuse):
             chs = self.base_chs
-            logging.debug("initial conv: 3, %d" % chs)
+            self.logger.debug("initial conv: 3, %d" % chs)
             # Init conv
             x = conv(x, 3, chs, 3, 1, 1, 0, False, self.get_params(0))
             x = tf.nn.leaky_relu(batch_norm(
@@ -26,16 +27,16 @@ class Discriminator(NetBase):
             for i in range(5):
                 stride = 2 if i == 0 or i == 2 else 1
                 chs = chs if i == 2 or i == 4 else chs * 2
-                logging.debug("conv: %d, %d" % (prev_chs, chs))
+                self.logger.debug("conv: %d, %d" % (prev_chs, chs))
                 x = tf.nn.leaky_relu(coupled_conv(x, prev_chs, chs, 3, stride, False, mcnt,
                                                   self.get_params(par_pos, par_pos + 6)))
                 prev_chs = chs
                 par_pos += 6
                 mcnt += 1
-            logging.debug("final conv: %d, 1" % prev_chs)
+            self.logger.debug("final conv: %d, 1" % prev_chs)
             x = conv(x, prev_chs, 1, 3, 1, 1, mcnt, True, *self.get_params(par_pos, par_pos + 2))
             par_pos += 2
-            logging.debug("%d param tensors traversed" % par_pos)
+            self.logger.debug("%d param tensors traversed" % par_pos)
         if self.to_save_vars is None:
             self.to_save_vars = tf.get_collection(
                 tf.GraphKeys.GLOBAL_VARIABLES, scope=self.graph_prefix)

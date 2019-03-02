@@ -12,3 +12,4 @@ datasets/
 .idea/
 .ipynb_checkpoints/
 runs/
+result/
