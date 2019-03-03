@@ -36,6 +36,8 @@ class Trainer:
         num_steps,
         reporting_steps,
         content_lambda,
+        generator_lr,
+        discriminator_lr,
         show_progress,
         logger_name,
         data_dir,
@@ -62,6 +64,8 @@ class Trainer:
         self.num_steps = num_steps
         self.reporting_steps = reporting_steps
         self.content_lambda = content_lambda
+        self.generator_lr = generator_lr
+        self.discriminator_lr = discriminator_lr
         self.data_dir = data_dir
         self.logdir = logdir
         self.result_dir = result_dir
@@ -269,10 +273,10 @@ class Trainer:
         g_loss = g_adversarial_loss + self.content_lambda * content_loss
 
         self.logger.info("Defining optimizers...")
-        g_optimizer = tf.train.AdamOptimizer(1e-4)
+        g_optimizer = tf.train.AdamOptimizer(self.generator_lr)
         g_train_op = g_optimizer.minimize(g_loss, var_list=g.to_save_vars)
 
-        d_optimizer = tf.train.AdamOptimizer(1e-4)
+        d_optimizer = tf.train.AdamOptimizer(self.discriminator_lr)
         d_train_op = d_optimizer.minimize(d_loss, var_list=d.to_save_vars)
 
         start = datetime.utcnow()
@@ -380,6 +384,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
     parser.add_argument("--content_lambda", type=float, default=0.01)
+    parser.add_argument("--generator_lr", type=float, default=1e-4)
+    parser.add_argument("--discriminator_lr", type=float, default=4e-4)
     parser.add_argument("--pass_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
     parser.add_argument("--pretrain_num_steps", type=int, default=60000)
