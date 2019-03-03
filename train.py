@@ -38,9 +38,12 @@ class Trainer:
         content_lambda,
         show_progress,
         logger_name,
+        data_dir,
         logdir,
         result_dir,
-        save_dir,
+        pretrain_model_dir,
+        model_dir,
+        disable_sampling,
         pass_vgg,
         pretrain_learning_rate,
         pretrain_num_steps,
@@ -59,9 +62,12 @@ class Trainer:
         self.num_steps = num_steps
         self.reporting_steps = reporting_steps
         self.content_lambda = content_lambda
+        self.data_dir = data_dir
         self.logdir = logdir
         self.result_dir = result_dir
-        self.save_dir = save_dir
+        self.pretrain_model_dir = pretrain_model_dir
+        self.model_dir = model_dir
+        self.disable_sampling = disable_sampling
         self.pass_vgg = pass_vgg
         self.pretrain_learning_rate = pretrain_learning_rate
         self.pretrain_num_steps = pretrain_num_steps
@@ -98,7 +104,7 @@ class Trainer:
         plt.close(fig)
 
     def get_dataset(self, dataset_name, domain, _type, batch_size):
-        files = glob(os.path.join("datasets", dataset_name, f"{_type}{domain}", "*"))
+        files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
         self.logger.info(
             f"Found {len(files)} domain{domain} images in {_type}{domain} folder."
         )
@@ -138,8 +144,7 @@ class Trainer:
             vgg = FixedVGG()
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
-            content_loss = tf.reduce_mean(tf.abs(input_content - generated_content))
-
+            content_loss = self.content_lambda * tf.reduce_mean(tf.abs(input_content - generated_content))
         else:
             self.logger.info("Defining content loss without VGG...")
             content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
@@ -157,7 +162,7 @@ class Trainer:
 
             self.logger.info("Loading previous checkpoints...")
             try:
-                g.load(sess, self.save_dir, self.pretrain_generator_name)
+                g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
                 self.logger.info(
                     f"Successfully loaded {self.pretrain_generator_name}..."
                 )
@@ -167,17 +172,18 @@ class Trainer:
                     "starting from scratch..."
                 )
 
-            self.logger.info(
-                f"Sampling {self.sample_size} images for tracking generator's performance..."
-            )
-            real_batches = [
-                sess.run(input_images) for _ in range(self.sample_size//self.batch_size)
-            ]
+            if not self.disable_sampling:
+                self.logger.info(
+                    f"Sampling {self.sample_size} images for tracking generator's performance..."
+                )
+                real_batches = [
+                    sess.run(input_images) for _ in range(self.sample_size//self.batch_size)
+                ]
 
-            self._save_generated_images(
-                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
-                image_name="sample_images.png",
-            )
+                self._save_generated_images(
+                    (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
+                    image_name="sample_images.png",
+                )
 
             self.logger.info("Starting training loop...")
             for step in range(1, self.pretrain_num_steps + 1):
@@ -185,17 +191,19 @@ class Trainer:
                 batch_losses.append(batch_loss)
 
                 if step % self.pretrain_reporting_steps == 0:
-                    fake_batches = [
-                        sess.run(
-                            generated_images, {input_images: real_b}
-                        ) for real_b in real_batches
-                    ]
 
-                    g.save(sess, self.save_dir, self.pretrain_generator_name)
-                    self._save_generated_images(
-                        (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
-                        image_name=f"generated_images_at_step_{step}.png",
-                    )
+                    if not self.disable_sampling:
+                        fake_batches = [
+                            sess.run(
+                                generated_images, {input_images: real_b}
+                            ) for real_b in real_batches
+                        ]
+
+                        g.save(sess, self.model_dir, self.pretrain_generator_name)
+                        self._save_generated_images(
+                            (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
+                            image_name=f"generated_images_at_step_{step}.png",
+                        )
 
                     self.logger.info(
                         "[Step {}] batch_loss: {:.3f}, {} elapsed".format(
@@ -277,28 +285,28 @@ class Trainer:
 
             self.logger.info("Loading previous checkpoints...")
             try:
-                g.load(sess, self.save_dir, self.generator_name)
+                g.load(sess, self.model_dir, self.generator_name)
                 self.logger.info(f"Successfully loaded {self.generator_name}...")
             except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
                     "Previous checkpoint not found, using pre-trained weights..."
                 )
                 try:
-                    g.load(sess, self.save_dir, self.pretrain_generator_name)
+                    g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
                     self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
                 except (tf.errors.NotFoundError, ValueError):
-                    self.logger.info(f"{self.pretrain_generator_name}, training from scratch...")
+                    self.logger.info(f"{self.pretrain_generator_name} not found, training from scratch...")
 
-            self.logger.info(
-                f"Sampling {self.sample_size} images for tracking generator's performance..."
-            )
+            if not self.disable_sampling:
+                self.logger.info(
+                    f"Sampling {self.sample_size} images for tracking generator's performance..."
+                )
+                real_batches = [sess.run(input_a) for _ in range(self.sample_size//self.batch_size)]
+                self._save_generated_images(
+                    (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
+                    image_name="sample_images.png",
+                )
 
-            real_batches = [sess.run(input_a) for _ in range(self.sample_size//self.batch_size)]
-
-            self._save_generated_images(
-                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
-                image_name="sample_images.png",
-            )
             self.logger.info("Starting training loop...")
             for step in range(1, self.num_steps + 1):
 
@@ -312,16 +320,15 @@ class Trainer:
 
                 if step % self.reporting_steps == 0:
                     self.logger.debug(f"Saving step {step}'s progress...")
-                    fake_batches = [
-                        sess.run(generated_b, {input_a: real_b}) for real_b in real_batches
-                    ]
-
-                    g.save(sess, self.save_dir, self.generator_name)
-                    self._save_generated_images(
-                        (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
-                        image_name=f"gan_images_at_step_{step}.png",
-                    )
-
+                    if not self.disable_sampling:
+                        fake_batches = [
+                            sess.run(generated_b, {input_a: real_b}) for real_b in real_batches
+                        ]
+                        self._save_generated_images(
+                            (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
+                            image_name=f"gan_images_at_step_{step}.png",
+                        )
+                    g.save(sess, self.model_dir, self.generator_name)
                     time_elapsed = datetime.utcnow() - start
                     res = ("[Step {}] d_loss: {:.2f}, g_loss: {:.2f}, c_loss: {:.2f}, "
                            "adv_loss: {:.2f}, time elapsed: {}")
@@ -377,9 +384,13 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
     parser.add_argument("--pretrain_num_steps", type=int, default=60000)
     parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
+    parser.add_argument("--data_dir", type=str, default="datasets")
     parser.add_argument("--logdir", type=str, default="runs")
     parser.add_argument("--result_dir", type=str, default="result")
-    parser.add_argument("--save_dir", type=str, default="ckpts")
+    parser.add_argument("--pretrain_model_dir", type=str, default="ckpts")
+    parser.add_argument("--model_dir", type=str, default="ckpts")
+    parser.add_argument("--disable_sampling", type=bool, default=False)
+
     parser.add_argument(
         "--pretrain_generator_name", type=str, default="pretrain_generator"
     )
