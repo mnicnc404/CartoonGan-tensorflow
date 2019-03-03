@@ -211,7 +211,7 @@ class Trainer:
                         )
                     )
 
-                    with open(os.path.join("result", "batch_losses.tsv"), "a") as f:
+                    with open(os.path.join(self.result_dir, "batch_losses.tsv"), "a") as f:
                         f.write(f"{step}\t{batch_loss}\n")
 
     def train_gan(self, **kwargs):
@@ -343,7 +343,7 @@ class Trainer:
                         )
                     )
 
-                    with open("result/gan_losses.tsv", "a") as f:
+                    with open(os.path.join(self.result_dir, "gan_losses.tsv"), "a") as f:
 
                         f.write(
                             f"{step}\t{d_batch_loss}\t{g_batch_loss}\t"
