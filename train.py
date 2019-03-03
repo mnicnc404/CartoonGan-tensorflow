@@ -179,6 +179,7 @@ class Trainer:
                 image_name="sample_images.png",
             )
 
+            self.logger.info("Starting training loop...")
             for step in range(1, self.pretrain_num_steps + 1):
                 _, batch_loss = sess.run([train_op, content_loss])
                 batch_losses.append(batch_loss)
@@ -206,8 +207,8 @@ class Trainer:
                         f.write(f"{step}\t{batch_loss}\n")
 
     def train_gan(self, **kwargs):
-
-        self.logger.info("Building data sets for both source/target domains...")
+        self.logger.info("Starting adversarial training...")
+        self.logger.info("Building data sets for both source/target/smooth domains...")
         ds_a = self.get_dataset(
             self.dataset_name, self.source_domain, "train", self.batch_size
         )
@@ -236,13 +237,13 @@ class Trainer:
         d_fake_out = d.build_graph(generated_b, reuse=True)
         d_smooth_out = d.build_graph(input_b_smooth, reuse=True)
 
-        self.logger.info("Define content loss using VGG...")
+        self.logger.info("Defining content loss using VGG...")
         vgg = FixedVGG()
         v_real_out = vgg.build_graph(input_a)
         v_fake_out = vgg.build_graph(generated_b)
         content_loss = tf.reduce_mean(tf.abs(v_real_out - v_fake_out))
 
-        self.logger.info("Define generator/discriminator losses...")
+        self.logger.info("Defining generator/discriminator losses...")
         d_real_loss = tf.reduce_mean(
             tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
         )
@@ -298,18 +299,19 @@ class Trainer:
                 (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
                 image_name="sample_images.png",
             )
-
+            self.logger.info("Starting training loop...")
             for step in range(1, self.num_steps + 1):
 
-                # update D
+                self.logger.debug(f"[Step {step}] Training discriminator...")
                 _, d_batch_loss = sess.run([d_train_op, d_loss])
 
-                # update G
+                self.logger.debug(f"[Step {step}] Training generator...")
                 _, g_batch_loss, g_content_loss, g_adv_loss = sess.run(
                     [g_train_op, g_loss, content_loss, g_adversarial_loss]
                 )
 
                 if step % self.reporting_steps == 0:
+                    self.logger.debug(f"Saving step {step}'s progress...")
                     fake_batches = [
                         sess.run(generated_b, {input_a: real_b}) for real_b in real_batches
                     ]
