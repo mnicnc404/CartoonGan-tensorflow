@@ -144,7 +144,8 @@ class Trainer:
         generated_images = g(input_images)
 
         if self.pass_vgg:
-            self.logger.info("Initializing VGG for computing content loss...")
+            self.logger.info("Initializing VGG for computing content loss ",
+                             "with content_lambda = {self.content_lambda}...")
             vgg = FixedVGG()
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
@@ -172,7 +173,7 @@ class Trainer:
                 )
             except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
-                    f"{self.pretrain_generator_name} checkpoints not found, "
+                    f"Checkpoint with name `{self.pretrain_generator_name}` is not found, "
                     "starting from scratch..."
                 )
 
@@ -189,7 +190,7 @@ class Trainer:
                     image_name="sample_images.png",
                 )
             else:
-                self.logger.info("Train without sampling images...")
+                self.logger.info("Proceed training without sampling images...")
 
             self.logger.info("Starting training loop...")
             for step in range(1, self.pretrain_num_steps + 1):
