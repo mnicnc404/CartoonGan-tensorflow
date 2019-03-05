@@ -145,7 +145,7 @@ class Trainer:
 
         if self.pass_vgg:
             self.logger.info("Initializing VGG for computing content loss ",
-                             "with content_lambda = {self.content_lambda}...")
+                             f"with content_lambda = {self.content_lambda}...")
             vgg = FixedVGG()
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
