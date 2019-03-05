@@ -188,6 +188,8 @@ class Trainer:
                     (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
                     image_name="sample_images.png",
                 )
+            else:
+                self.logger.info("Train without sampling images...")
 
             self.logger.info("Starting training loop...")
             for step in range(1, self.pretrain_num_steps + 1):
@@ -202,13 +204,13 @@ class Trainer:
                                 generated_images, {input_images: real_b}
                             ) for real_b in real_batches
                         ]
-
-                        g.save(sess, self.model_dir, self.pretrain_generator_name)
                         self._save_generated_images(
                             (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
                             image_name=f"generated_images_at_step_{step}.png",
                         )
 
+                    self.logger.info(f"Saving checkpoints for step {step}...")
+                    g.save(sess, self.model_dir, self.pretrain_generator_name)
                     self.logger.info(
                         "[Step {}] batch_loss: {:.3f}, {} elapsed".format(
                             step, batch_loss, datetime.utcnow() - start
@@ -310,6 +312,8 @@ class Trainer:
                     (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
                     image_name="sample_images.png",
                 )
+            else:
+                self.logger.info("Train without sampling images...")
 
             self.logger.info("Starting training loop...")
             for step in range(1, self.num_steps + 1):
@@ -388,7 +392,7 @@ if __name__ == "__main__":
     parser.add_argument("--discriminator_lr", type=float, default=4e-4)
     parser.add_argument("--pass_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
-    parser.add_argument("--pretrain_num_steps", type=int, default=60000)
+    parser.add_argument("--pretrain_num_steps", type=int, default=60_000)
     parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
     parser.add_argument("--data_dir", type=str, default="datasets")
     parser.add_argument("--logdir", type=str, default="runs")

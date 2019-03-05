@@ -1,14 +1,19 @@
 import tensorflow as tf
 from net_base import NetBase
-from modules import conv_with_in, instance_norm, conv
+from modules import coupled_conv, conv_with_in, instance_norm, conv
 
 
 class Generator(NetBase):
 
-    def __init__(self, input_size=None, base_chs=64, init_params=None, inf_only=False):
+    def __init__(self, conv_arch="coupled_conv", input_size=None, base_chs=64, init_params=None, inf_only=False):
         super(Generator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Generator"
+        self.conv_arch = conv_arch
+        if self.conv_arch == "coupled_conv":
+            self.num_conv_params = 6
+        elif self.conv_arch == "conv_with_in":
+            self.num_conv_params = 3
 
     def build_graph(self, x, reuse=False):
         with tf.variable_scope(self.graph_prefix, reuse=reuse):
@@ -33,23 +38,38 @@ class Generator(NetBase):
                     else:
                         stride = 1
                     self.logger.debug("downsample conv: %d, %d" % (prev_chs, chs))
-                    x = conv_with_in(x, prev_chs, chs, 3, stride, True, mcnt,
-                                     self.get_params(par_pos, par_pos + 3))
+                    if self.conv_arch == "coupled_conv":
+                        x = coupled_conv(x, prev_chs, chs, 3, stride, True, mcnt,
+                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                    elif self.conv_arch == "conv_with_in":
+                        x = conv_with_in(x, prev_chs, chs, 3, stride, True, mcnt,
+                                         self.get_params(par_pos, par_pos + self.num_conv_params))
                     prev_chs = chs
-                    par_pos += 3
+                    par_pos += self.num_conv_params
                     mcnt += 1
             # ResBlock
             with tf.variable_scope("ResBlock", reuse=reuse):
                 for _ in range(8):
                     x1 = x
                     self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
-                    x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     self.get_params(par_pos, par_pos + 3))
-                    x = conv_with_in(x, prev_chs, chs, 3, 1, False, mcnt + 1,
-                                     self.get_params(par_pos + 3, par_pos + 6))
+                    if self.conv_arch == "coupled_conv":
+                        x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
+                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                        x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt + 1,
+                                         self.get_params(
+                                             par_pos + self.num_conv_params,
+                                             par_pos + self.num_conv_params * 2))
+                    elif self.conv_arch == "conv_with_in":
+                        x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
+                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                        x = conv_with_in(x, prev_chs, chs, 3, 1, False, mcnt + 1,
+                                         self.get_params(
+                                             par_pos + self.num_conv_params,
+                                             par_pos + self.num_conv_params * 2))
+
                     x += x1  # no relu as suggested by Sam Gross and Michael Wilber
                     mcnt += 2
-                    par_pos += 6
+                    par_pos += self.num_conv_params * 2
             # Upsample
             with tf.variable_scope("Upsample", reuse=reuse):
                 cur_h = input_shape[1] // 4
@@ -61,9 +81,13 @@ class Generator(NetBase):
                         chs /= 2
                         x = tf.image.resize_bilinear(x, (cur_h, cur_w))
                     self.logger.debug(f"upsample conv: {prev_chs}, {chs}, height: {cur_h}, width: {cur_w}")
-                    x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
-                                     self.get_params(par_pos, par_pos + 3))
-                    par_pos += 3
+                    if self.conv_arch == "coupled_conv":
+                        x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
+                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                    elif self.conv_arch == "conv_with_in":
+                        x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
+                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                    par_pos += self.num_conv_params
                     mcnt += 1
                     prev_chs = chs
             # Final conv
@@ -90,6 +114,7 @@ def _test():
     shape = [1, size, size, 3]
     x = tf.placeholder(tf.float32, shape, name="input")
     net = Generator(input_size=size)
+    # net = Generator(conv_arch="conv_with_in", input_size=size)
     out_op = net(x)
     nx = np.random.rand(1, 225, 150, 3).astype(np.float32)
     writer = tf.summary.FileWriter(os.path.join("tmp", "gruns"), tf.get_default_graph())
