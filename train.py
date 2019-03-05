@@ -144,8 +144,8 @@ class Trainer:
         generated_images = g(input_images)
 
         if self.pass_vgg:
-            self.logger.info("Initializing VGG for computing content loss ",
-                             f"with content_lambda = {self.content_lambda}...")
+            self.logger.info("Initializing VGG for computing content loss. "
+                             f"content_lambda: {self.content_lambda}...")
             vgg = FixedVGG()
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
@@ -388,7 +388,7 @@ if __name__ == "__main__":
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
-    parser.add_argument("--content_lambda", type=float, default=0.01)
+    parser.add_argument("--content_lambda", type=float, default=10)
     parser.add_argument("--generator_lr", type=float, default=1e-4)
     parser.add_argument("--discriminator_lr", type=float, default=4e-4)
     parser.add_argument("--pass_vgg", action="store_true")
