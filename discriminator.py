@@ -1,16 +1,21 @@
 import logging
 import tensorflow as tf
 from net_base import NetBase
-from modules import coupled_conv, batch_norm, conv
+from modules import coupled_conv, conv_with_in, batch_norm, conv
 
 
 class Discriminator(NetBase):
 
-    def __init__(self, input_size=224, base_chs=32, init_params=None, inf_only=False):
+    def __init__(self, conv_arch="conv_with_in", input_size=None, base_chs=32, init_params=None, inf_only=False):
         super(Discriminator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Discriminator"
         self.logger = logging.getLogger(self.graph_prefix)
+        self.conv_arch = conv_arch
+        if self.conv_arch == "coupled_conv":
+            self.num_conv_params = 6
+        elif self.conv_arch == "conv_with_in":
+            self.num_conv_params = 3
 
     def build_graph(self, x, reuse=False):
         with tf.variable_scope(self.graph_prefix, reuse=reuse):
@@ -28,10 +33,17 @@ class Discriminator(NetBase):
                 stride = 2 if i == 0 or i == 2 else 1
                 chs = chs if i == 2 or i == 4 else chs * 2
                 self.logger.debug("conv: %d, %d" % (prev_chs, chs))
-                x = tf.nn.leaky_relu(coupled_conv(x, prev_chs, chs, 3, stride, False, mcnt,
-                                                  self.get_params(par_pos, par_pos + 6)))
+
+                conv_params = [
+                    x, prev_chs, chs, 3, stride, False, mcnt,
+                    self.get_params(par_pos, par_pos + self.num_conv_params)
+                ]
+                if self.conv_arch == "coupled_conv":
+                    x = tf.nn.leaky_relu(coupled_conv(*conv_params))
+                elif self.conv_arch == "conv_with_in":
+                    x = tf.nn.leaky_relu(conv_with_in(*conv_params))
                 prev_chs = chs
-                par_pos += 6
+                par_pos += self.num_conv_params
                 mcnt += 1
             self.logger.debug("final conv: %d, 1" % prev_chs)
             x = conv(x, prev_chs, 1, 3, 1, 1, mcnt, True, *self.get_params(par_pos, par_pos + 2))
@@ -51,7 +63,7 @@ def _test():
     import os
     import numpy as np
     logging.basicConfig(level=logging.DEBUG)
-    size = 224
+    size = 256
     x = tf.placeholder(tf.float32, [2, size, size, 3])
     net = Discriminator(input_size=size)
     nx = np.random.rand(2, size, size, 3).astype(np.float32)
