@@ -52,6 +52,7 @@ class Trainer:
         pretrain_reporting_steps,
         pretrain_generator_name,
         generator_name,
+        discriminator_name,
         **kwargs,
     ):
         self.ascii = os.name == "nt"
@@ -78,6 +79,7 @@ class Trainer:
         self.pretrain_reporting_steps = pretrain_reporting_steps
         self.pretrain_generator_name = pretrain_generator_name
         self.generator_name = generator_name
+        self.discriminator_name = discriminator_name
 
         self.logger = logging.getLogger(logger_name)
 
@@ -338,6 +340,7 @@ class Trainer:
                             image_name=f"gan_images_at_step_{step}.png",
                         )
                     g.save(sess, self.model_dir, self.generator_name)
+                    d.save(sess, self.model_dir, self.discriminator_name)
                     time_elapsed = datetime.utcnow() - start
                     res = ("[Step {}] d_loss: {:.2f}, g_loss: {:.2f}, c_loss: {:.2f}, "
                            "adv_loss: {:.2f}, time elapsed: {}")
@@ -406,6 +409,7 @@ if __name__ == "__main__":
         "--pretrain_generator_name", type=str, default="pretrain_generator"
     )
     parser.add_argument("--generator_name", type=str, default="generator")
+    parser.add_argument("--discriminator_name", type=str, default="discriminator")
     parser.add_argument(
         "--logging_lvl",
         type=str,
