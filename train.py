@@ -36,6 +36,8 @@ class Trainer:
         num_steps,
         reporting_steps,
         content_lambda,
+        g_adv_lambda,
+        d_adv_lambda,
         generator_lr,
         discriminator_lr,
         show_progress,
@@ -65,6 +67,8 @@ class Trainer:
         self.num_steps = num_steps
         self.reporting_steps = reporting_steps
         self.content_lambda = content_lambda
+        self.g_adv_lambda = g_adv_lambda
+        self.d_adv_lambda = d_adv_lambda
         self.generator_lr = generator_lr
         self.discriminator_lr = discriminator_lr
         self.data_dir = data_dir
@@ -254,7 +258,8 @@ class Trainer:
         d_fake_out = d.build_graph(generated_b, reuse=True)
         d_smooth_out = d.build_graph(input_b_smooth, reuse=True)
 
-        self.logger.info("Defining content loss using VGG...")
+        self.logger.info("Initializing VGG for computing content loss. "
+                         f"content_lambda: {self.content_lambda}...")
         vgg = FixedVGG()
         v_real_out = vgg.build_graph(input_a)
         v_fake_out = vgg.build_graph(generated_b)
@@ -271,11 +276,14 @@ class Trainer:
             tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_smooth_out), d_smooth_out)
         )
         d_loss = d_real_loss + d_fake_loss + d_smooth_loss
+        self.logger.info(f"Setting d_adv_lambda to {self.d_adv_lambda}...")
+        d_loss = self.d_adv_lambda * d_loss
 
         g_adversarial_loss = tf.reduce_mean(
             tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out)
         )
-        g_loss = g_adversarial_loss + self.content_lambda * content_loss
+        self.logger.info(f"Setting g_adv_lambda to {self.g_adv_lambda}...")
+        g_loss = self.g_adv_lambda * g_adversarial_loss + self.content_lambda * content_loss
 
         self.logger.info("Defining optimizers...")
         g_optimizer = tf.train.AdamOptimizer(self.generator_lr)
@@ -292,19 +300,28 @@ class Trainer:
             ds_b_iter.initializer.run()
             ds_b_smooth_iter.initializer.run()
 
-            self.logger.info("Loading previous checkpoints...")
+            self.logger.info("Loading previous generator...")
             try:
                 g.load(sess, self.model_dir, self.generator_name)
                 self.logger.info(f"Successfully loaded {self.generator_name}...")
             except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
-                    "Previous checkpoint not found, using pre-trained weights..."
+                    "Previous generator not found, using pre-trained weights..."
                 )
                 try:
                     g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
                     self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
                 except (tf.errors.NotFoundError, ValueError):
                     self.logger.info(f"{self.pretrain_generator_name} not found, training from scratch...")
+
+            self.logger.info("Loading previous discriminator...")
+            try:
+                d.load(sess, self.model_dir, self.discriminator_name)
+                self.logger.info(f"Successfully loaded {self.discriminator_name}...")
+            except (tf.errors.NotFoundError, ValueError):
+                self.logger.info(
+                    "Previous discriminator not found, training from scratch..."
+                )
 
             if not self.disable_sampling:
                 self.logger.info(
@@ -392,6 +409,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
     parser.add_argument("--content_lambda", type=float, default=10)
+    parser.add_argument("--g_adv_lambda", type=float, default=1)
+    parser.add_argument("--d_adv_lambda", type=float, default=1)
     parser.add_argument("--generator_lr", type=float, default=1e-4)
     parser.add_argument("--discriminator_lr", type=float, default=4e-4)
     parser.add_argument("--pass_vgg", action="store_true")

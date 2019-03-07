@@ -42,6 +42,8 @@ class Discriminator(NetBase):
                     x = tf.nn.leaky_relu(coupled_conv(*conv_params))
                 elif self.conv_arch == "conv_with_in":
                     x = tf.nn.leaky_relu(conv_with_in(*conv_params))
+                else:
+                    self.logger.critical(f"Not recognized `conv_arch`: {conv_arch}")
                 prev_chs = chs
                 par_pos += self.num_conv_params
                 mcnt += 1
