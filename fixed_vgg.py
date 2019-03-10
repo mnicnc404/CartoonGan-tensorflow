@@ -41,8 +41,8 @@ class FixedVGG():
                     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], "SAME")
         return x
 
-    def __call__(self, x):
-        return self.build_graph(x)
+    def __call__(self, x, **kwargs):
+        return self.build_graph(x, **kwargs)
 
 
 def _test():
