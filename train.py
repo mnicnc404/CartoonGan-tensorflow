@@ -134,7 +134,7 @@ class Trainer:
         def image_processing(filename):
             x = tf.read_file(filename)
             x = tf.image.decode_jpeg(x, channels=3)
-            x = tf.image.random_crop(x, (1, self.input_size, self.input_size, 3))
+            x = tf.image.random_crop(x, (self.input_size, self.input_size, 3))
             img = tf.image.resize_images(x, [self.input_size, self.input_size])
             img = tf.cast(img, tf.float32) / 127.5 - 1
             return img
