@@ -5,7 +5,8 @@ from modules import coupled_conv, conv_with_in, instance_norm, conv
 
 class Generator(NetBase):
 
-    def __init__(self, conv_arch="conv_with_in", input_size=None, base_chs=64, init_params=None, inf_only=False):
+    def __init__(self, conv_arch="conv_with_in", input_size=None,
+                 base_chs=64, init_params=None, inf_only=False):
         super(Generator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Generator"
@@ -80,7 +81,8 @@ class Generator(NetBase):
                         cur_w *= 2
                         chs /= 2
                         x = tf.image.resize_bilinear(x, (cur_h, cur_w))
-                    self.logger.debug(f"upsample conv: {prev_chs}, {chs}, height: {cur_h}, width: {cur_w}")
+                    self.logger.debug(f"upsample conv: {prev_chs}, {chs}, "
+                                      f"height: {cur_h}, width: {cur_w}")
                     if self.conv_arch == "coupled_conv":
                         x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
                                          self.get_params(par_pos, par_pos + self.num_conv_params))
