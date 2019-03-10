@@ -163,8 +163,8 @@ class Trainer:
             self.logger.info("Initializing VGG for computing content loss. "
                              f"content_lambda: {self.content_lambda}...")
             vgg = FixedVGG()
-            input_content = vgg.build_graph(input_images)
-            generated_content = vgg.build_graph(generated_images)
+            input_content = vgg(input_images)
+            generated_content = vgg(generated_images)
             content_loss = self.content_lambda * tf.reduce_mean(
                 tf.abs(input_content - generated_content))
         else:
@@ -265,19 +265,25 @@ class Trainer:
 
         self.logger.info("Building discriminator...")
         d = Discriminator(input_size=self.input_size)
-        d_real_out = d.build_graph(input_b)
-        d_fake_out = d.build_graph(generated_b, reuse=True)
-        d_smooth_out = d.build_graph(input_b_smooth, reuse=True)
+        d_real_out = d(input_b)
+        d_fake_out = d(generated_b, reuse=True)
+        d_smooth_out = d(input_b_smooth, reuse=True)
 
         self.logger.info("Initializing VGG for computing content/style loss. ")
         self.logger.info(f"content_lambda: {self.content_lambda}...")
         self.logger.info(f"style_lambda: {self.style_lambda}...")
-        vgg = FixedVGG()
-        v_real_out = vgg.build_graph(input_a)
-        v_fake_out = vgg.build_graph(generated_b)
-        content_loss = tf.reduce_mean(tf.abs(v_real_out - v_fake_out))
-        style_loss = tf.reduce_mean(tf.abs(
-            gram(vgg.build_graph(input_b)) - gram(v_fake_out)))
+        if self.content_lambda != 0 or self.style_lambda != 0:
+            vgg = FixedVGG()
+            v_fake_out = vgg(generated_b)
+            if self.content_lambda != 0:
+                content_loss = tf.reduce_mean(tf.abs(vgg(input_a) - v_fake_out))
+            else:
+                content_loss = tf.constant(0.)
+            if self.style_lambda != 0:
+                style_loss = tf.reduce_mean(tf.abs(
+                    gram(vgg(input_b)) - gram(v_fake_out)))
+            else:
+                style_loss = tf.constant(0.)
 
         self.logger.info("Defining generator/discriminator losses...")
         d_real_loss = tf.reduce_mean(
