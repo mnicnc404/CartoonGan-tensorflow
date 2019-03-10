@@ -24,6 +24,14 @@ def _tqdm(res, *args, **kwargs):
     return res
 
 
+def gram(x):
+    shape_x = tf.shape(x)
+    b = shape_x[0]
+    c = shape_x[3]
+    x = tf.reshape(x, [b, -1, c])
+    return tf.matmul(tf.transpose(x, [0, 2, 1]), x) / tf.cast((tf.size(x) // b), tf.float32)
+
+
 class Trainer:
     def __init__(
         self,
@@ -36,6 +44,7 @@ class Trainer:
         num_steps,
         reporting_steps,
         content_lambda,
+        style_lambda,
         g_adv_lambda,
         d_adv_lambda,
         generator_lr,
@@ -67,6 +76,7 @@ class Trainer:
         self.num_steps = num_steps
         self.reporting_steps = reporting_steps
         self.content_lambda = content_lambda
+        self.style_lambda = style_lambda
         self.g_adv_lambda = g_adv_lambda
         self.d_adv_lambda = d_adv_lambda
         self.generator_lr = generator_lr
@@ -155,7 +165,8 @@ class Trainer:
             vgg = FixedVGG()
             input_content = vgg.build_graph(input_images)
             generated_content = vgg.build_graph(generated_images)
-            content_loss = self.content_lambda * tf.reduce_mean(tf.abs(input_content - generated_content))
+            content_loss = self.content_lambda * tf.reduce_mean(
+                tf.abs(input_content - generated_content))
         else:
             self.logger.info("Defining content loss without VGG...")
             content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
@@ -258,12 +269,15 @@ class Trainer:
         d_fake_out = d.build_graph(generated_b, reuse=True)
         d_smooth_out = d.build_graph(input_b_smooth, reuse=True)
 
-        self.logger.info("Initializing VGG for computing content loss. "
-                         f"content_lambda: {self.content_lambda}...")
+        self.logger.info("Initializing VGG for computing content/style loss. ")
+        self.logger.info(f"content_lambda: {self.content_lambda}...")
+        self.logger.info(f"style_lambda: {self.style_lambda}...")
         vgg = FixedVGG()
         v_real_out = vgg.build_graph(input_a)
         v_fake_out = vgg.build_graph(generated_b)
         content_loss = tf.reduce_mean(tf.abs(v_real_out - v_fake_out))
+        style_loss = tf.reduce_mean(tf.abs(
+            gram(vgg.build_graph(input_b)) - gram(v_fake_out)))
 
         self.logger.info("Defining generator/discriminator losses...")
         d_real_loss = tf.reduce_mean(
@@ -283,7 +297,10 @@ class Trainer:
             tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out)
         )
         self.logger.info(f"Setting g_adv_lambda to {self.g_adv_lambda}...")
-        g_loss = self.g_adv_lambda * g_adversarial_loss + self.content_lambda * content_loss
+        g_loss = (
+            self.g_adv_lambda * g_adversarial_loss +
+            self.content_lambda * content_loss +
+            self.style_lambda * style_loss)
 
         self.logger.info("Defining optimizers...")
         g_optimizer = tf.train.AdamOptimizer(self.generator_lr)
@@ -312,7 +329,8 @@ class Trainer:
                     g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
                     self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
                 except (tf.errors.NotFoundError, ValueError):
-                    self.logger.info(f"{self.pretrain_generator_name} not found, training from scratch...")
+                    self.logger.info(
+                        f"{self.pretrain_generator_name} not found, training from scratch...")
 
             self.logger.info("Loading previous discriminator...")
             try:
@@ -342,8 +360,8 @@ class Trainer:
                 _, d_batch_loss = sess.run([d_train_op, d_loss])
 
                 self.logger.debug(f"[Step {step}] Training generator...")
-                _, g_batch_loss, g_content_loss, g_adv_loss = sess.run(
-                    [g_train_op, g_loss, content_loss, g_adversarial_loss]
+                _, g_batch_loss, g_content_loss, g_style_loss, g_adv_loss = sess.run(
+                    [g_train_op, g_loss, content_loss, style_loss, g_adversarial_loss]
                 )
 
                 if step % self.reporting_steps == 0:
@@ -360,13 +378,14 @@ class Trainer:
                     d.save(sess, self.model_dir, self.discriminator_name)
                     time_elapsed = datetime.utcnow() - start
                     res = ("[Step {}] d_loss: {:.2f}, g_loss: {:.2f}, c_loss: {:.2f}, "
-                           "adv_loss: {:.2f}, time elapsed: {}")
+                           "style_loss: {:.2f}, adv_loss: {:.2f}, time elapsed: {}")
                     self.logger.info(
                         res.format(
                             step,
                             d_batch_loss,
                             g_batch_loss,
                             g_content_loss,
+                            g_style_loss,
                             g_adv_loss,
                             time_elapsed,
                         )
@@ -375,8 +394,8 @@ class Trainer:
                     with open(os.path.join(self.result_dir, "gan_losses.tsv"), "a") as f:
 
                         f.write(
-                            f"{step}\t{d_batch_loss}\t{g_batch_loss}\t"
-                            f"{g_content_loss}\t{g_adv_loss}\t{time_elapsed}\n"
+                            f"{step}\t{d_batch_loss}\t{g_batch_loss}\t{g_content_loss}\t"
+                            f"{g_style_loss}\t{g_adv_loss}\t{time_elapsed}\n"
                         )
 
 
@@ -409,6 +428,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
     parser.add_argument("--content_lambda", type=float, default=10)
+    parser.add_argument("--style_lambda", type=float, default=1.)
     parser.add_argument("--g_adv_lambda", type=float, default=1)
     parser.add_argument("--d_adv_lambda", type=float, default=1)
     parser.add_argument("--generator_lr", type=float, default=1e-4)
