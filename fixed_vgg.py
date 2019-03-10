@@ -41,6 +41,9 @@ class FixedVGG():
                     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], "SAME")
         return x
 
+    def __call__(self, x):
+        return self.build_graph(x)
+
 
 def _test():
     import os
@@ -48,8 +51,8 @@ def _test():
     v2 = FixedVGG(prereversed=False, scope_prefix="vgg2")
     x = tf.placeholder(tf.float32, [None, 256, 256, 3])
     nx = ((np.random.rand(2, 256, 256, 3) - 0.5) * 2).astype(np.float32)
-    outop1 = v1.build_graph(x)
-    outop2 = v2.build_graph(x)
+    outop1 = v1(x)
+    outop2 = v2(x)
     writer = tf.summary.FileWriter(os.path.join("tmp", "bruns"), tf.get_default_graph())
     writer.close()
     with tf.Session() as sess:
@@ -59,7 +62,7 @@ def _test():
     try:
         vv = FixedVGG("fixed_vgg.npy")
         x3 = tf.placeholder(tf.float32, [None, 256, 256, 3])
-        v3 = vv.build_graph(x3)
+        v3 = vv(x3)
         with tf.Session() as sess:
             nv3 = sess.run(v3, {x3: nx})
         print(np.sqrt(np.mean((nv1-nv3)**2)))

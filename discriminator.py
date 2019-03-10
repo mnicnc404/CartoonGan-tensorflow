@@ -6,7 +6,8 @@ from modules import coupled_conv, conv_with_in, batch_norm, conv
 
 class Discriminator(NetBase):
 
-    def __init__(self, conv_arch="conv_with_in", input_size=None, base_chs=32, init_params=None, inf_only=False):
+    def __init__(self, conv_arch="conv_with_in", input_size=None,
+                 base_chs=32, init_params=None, inf_only=False):
         super(Discriminator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Discriminator"
@@ -43,7 +44,9 @@ class Discriminator(NetBase):
                 elif self.conv_arch == "conv_with_in":
                     x = tf.nn.leaky_relu(conv_with_in(*conv_params))
                 else:
-                    self.logger.critical(f"Not recognized `conv_arch`: {conv_arch}")
+                    wrong_msg = f"Not recognized 'conv_arch': {self.conv_arch}"
+                    self.logger.critical(wrong_msg)
+                    raise ValueError(wrong_msg)
                 prev_chs = chs
                 par_pos += self.num_conv_params
                 mcnt += 1
