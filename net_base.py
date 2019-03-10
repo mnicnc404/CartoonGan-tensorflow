@@ -23,8 +23,8 @@ class NetBase():
     def build_graph(self, x):
         raise NotImplementedError
 
-    def __call__(self, x):
-        return self.build_graph(x)
+    def __call__(self, x, **kwargs):
+        return self.build_graph(x, **kwargs)
 
     def get_params(self, i, j=None):
         if j is None:
