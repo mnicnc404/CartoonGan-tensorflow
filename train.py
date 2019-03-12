@@ -35,6 +35,7 @@ def gram(x):
 class Trainer:
     def __init__(
         self,
+        conv_arch,
         dataset_name,
         source_domain,
         target_domain,
@@ -67,6 +68,7 @@ class Trainer:
         **kwargs,
     ):
         self.ascii = os.name == "nt"
+        self.conv_arch = conv_arch
         self.dataset_name = dataset_name
         self.source_domain = source_domain
         self.target_domain = target_domain
@@ -156,8 +158,8 @@ class Trainer:
         ds_iter = ds.make_initializable_iterator()
         input_images = ds_iter.get_next()
 
-        self.logger.info("Initializing generator...")
-        g = Generator(input_size=None)
+        self.logger.info(f"Initializing generator using `{self.conv_arch}` arch...")
+        g = Generator(conv_arch=self.conv_arch, input_size=None)
         generated_images = g(input_images)
 
         if self.pass_vgg:
@@ -260,12 +262,12 @@ class Trainer:
         input_b = ds_b_iter.get_next()
         input_b_smooth = ds_b_smooth_iter.get_next()
 
-        self.logger.info("Building generator...")
-        g = Generator(input_size=self.input_size)
+        self.logger.info(f"Building generator using {self.conv_arch} arch...")
+        g = Generator(conv_arch=self.conv_arch, input_size=self.input_size)
         generated_b = g(input_a)
 
-        self.logger.info("Building discriminator...")
-        d = Discriminator(input_size=self.input_size)
+        self.logger.info("Building discriminator using {self.conv_arch} arch...")
+        d = Discriminator(conv_arch=self.conv_arch, input_size=self.input_size)
         d_real_out = d(input_b)
         d_fake_out = d(generated_b, reuse=True)
         d_smooth_out = d(input_b_smooth, reuse=True)
@@ -426,6 +428,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="full",
                         choices=["full", "pretrain", "gan"])
+    parser.add_argument("--conv_arch", type=str, default="conv_with_in",
+                        choices=["conv_with_in", "coupled_conv"])
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
