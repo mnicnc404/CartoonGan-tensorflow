@@ -35,10 +35,11 @@ def gram(x):
 class Trainer:
     def __init__(
         self,
-        conv_arch,
         dataset_name,
         source_domain,
         target_domain,
+        conv_arch,
+        num_generator_res_blocks,
         input_size,
         batch_size,
         sample_size,
@@ -68,10 +69,11 @@ class Trainer:
         **kwargs,
     ):
         self.ascii = os.name == "nt"
-        self.conv_arch = conv_arch
         self.dataset_name = dataset_name
         self.source_domain = source_domain
         self.target_domain = target_domain
+        self.conv_arch = conv_arch
+        self.num_generator_res_blocks = num_generator_res_blocks
         self.input_size = input_size
         self.batch_size = batch_size
         self.sample_size = sample_size
@@ -158,8 +160,14 @@ class Trainer:
         ds_iter = ds.make_initializable_iterator()
         input_images = ds_iter.get_next()
 
-        self.logger.info(f"Initializing generator using `{self.conv_arch}` arch...")
-        g = Generator(conv_arch=self.conv_arch, input_size=None)
+        self.logger.info(
+            f"Initializing generator using `{self.conv_arch}` arch, "
+            f"{self.num_generator_res_blocks} residual blocks..."
+        )
+        g = Generator(
+            conv_arch=self.conv_arch,
+            num_res_blocks=self.num_generator_res_blocks
+        )
         generated_images = g(input_images)
 
         if self.pass_vgg:
@@ -262,8 +270,14 @@ class Trainer:
         input_b = ds_b_iter.get_next()
         input_b_smooth = ds_b_smooth_iter.get_next()
 
-        self.logger.info(f"Building generator using {self.conv_arch} arch...")
-        g = Generator(conv_arch=self.conv_arch, input_size=self.input_size)
+        self.logger.info(
+            f"Building generator using `{self.conv_arch}` arch, "
+            f"{self.num_generator_res_blocks} residual blocks..."
+        )
+        g = Generator(
+            conv_arch=self.conv_arch,
+            num_res_blocks=self.num_generator_res_blocks
+        )
         generated_b = g(input_a)
 
         self.logger.info("Building discriminator using {self.conv_arch} arch...")
@@ -428,14 +442,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="full",
                         choices=["full", "pretrain", "gan"])
-    parser.add_argument("--conv_arch", type=str, default="conv_with_in",
-                        choices=["conv_with_in", "coupled_conv"])
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--sample_size", type=int, default=32)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
+    parser.add_argument("--conv_arch", type=str, default="conv_with_in",
+                        choices=["conv_with_in", "coupled_conv"])
+    parser.add_argument("--num_generator_res_blocks", type=int, default=8)
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
     parser.add_argument("--content_lambda", type=float, default=10)
