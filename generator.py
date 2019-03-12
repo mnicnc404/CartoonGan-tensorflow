@@ -5,12 +5,13 @@ from modules import coupled_conv, conv_with_in, instance_norm, conv
 
 class Generator(NetBase):
 
-    def __init__(self, conv_arch, input_size=None,
+    def __init__(self, conv_arch, num_res_blocks=8, input_size=None,
                  base_chs=64, init_params=None, inf_only=False):
         super(Generator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
         self.graph_prefix = "Generator"
         self.conv_arch = conv_arch
+        self.num_res_blocks = num_res_blocks
         if self.conv_arch == "coupled_conv":
             self.num_conv_params = 6
         elif self.conv_arch == "conv_with_in":
@@ -50,7 +51,7 @@ class Generator(NetBase):
                     mcnt += 1
             # ResBlock
             with tf.variable_scope("ResBlock", reuse=reuse):
-                for _ in range(8):
+                for _ in range(self.num_res_blocks):
                     x1 = x
                     self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
                     if self.conv_arch == "coupled_conv":
