@@ -280,7 +280,7 @@ class Trainer:
         )
         generated_b = g(input_a)
 
-        self.logger.info("Building discriminator using {self.conv_arch} arch...")
+        self.logger.info(f"Building discriminator using {self.conv_arch} arch...")
         d = Discriminator(conv_arch=self.conv_arch, input_size=self.input_size)
         d_real_out = d(input_b)
         d_fake_out = d(generated_b, reuse=True)
