@@ -6,7 +6,7 @@ from modules import coupled_conv, conv_with_in, batch_norm, conv
 
 class Discriminator(NetBase):
 
-    def __init__(self, conv_arch="conv_with_in", input_size=None,
+    def __init__(self, conv_arch, input_size=None,
                  base_chs=32, init_params=None, inf_only=False):
         super(Discriminator, self).__init__(
                 input_size, base_chs, init_params, inf_only)
