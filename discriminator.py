@@ -13,7 +13,7 @@ class Discriminator(NetBase):
         self.graph_prefix = "Discriminator"
         self.logger = logging.getLogger(self.graph_prefix)
         self.conv_arch = conv_arch
-        if self.conv_arch == "coupled_conv":
+        if self.conv_arch in ["coupled_conv", "coupled_conv_resblocks"]:
             self.num_conv_params = 6
         elif self.conv_arch == "conv_with_in":
             self.num_conv_params = 3
@@ -39,7 +39,7 @@ class Discriminator(NetBase):
                     x, prev_chs, chs, 3, stride, False, mcnt,
                     self.get_params(par_pos, par_pos + self.num_conv_params)
                 ]
-                if self.conv_arch == "coupled_conv":
+                if self.conv_arch in ["coupled_conv", "coupled_conv_resblocks"]:
                     x = tf.nn.leaky_relu(coupled_conv(*conv_params))
                 elif self.conv_arch == "conv_with_in":
                     x = tf.nn.leaky_relu(conv_with_in(*conv_params))

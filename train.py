@@ -38,6 +38,7 @@ class Trainer:
         dataset_name,
         source_domain,
         target_domain,
+        gan_type,
         conv_arch,
         num_generator_res_blocks,
         input_size,
@@ -72,6 +73,7 @@ class Trainer:
         self.dataset_name = dataset_name
         self.source_domain = source_domain
         self.target_domain = target_domain
+        self.gan_type = gan_type
         self.conv_arch = conv_arch
         self.num_generator_res_blocks = num_generator_res_blocks
         self.input_size = input_size
@@ -197,7 +199,7 @@ class Trainer:
             try:
                 g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
                 self.logger.info(
-                    f"Successfully loaded {self.pretrain_generator_name}..."
+                    f"Successfully loaded `{self.pretrain_generator_name}`..."
                 )
             except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
@@ -250,7 +252,11 @@ class Trainer:
                         f.write(f"{step}\t{batch_loss}\n")
 
     def train_gan(self, **kwargs):
-        self.logger.info("Starting adversarial training...")
+
+        self.logger.info(
+            f"Starting adversarial training with {self.num_steps} steps, "
+            f"batch size: {self.batch_size}..."
+        )
         self.logger.info("Building data sets for both source/target/smooth domains...")
         ds_a = self.get_dataset(
             self.dataset_name, self.source_domain, "train", self.batch_size
@@ -280,7 +286,7 @@ class Trainer:
         )
         generated_b = g(input_a)
 
-        self.logger.info(f"Building discriminator using {self.conv_arch} arch...")
+        self.logger.info(f"Building discriminator using `{self.conv_arch}` arch...")
         d = Discriminator(conv_arch=self.conv_arch, input_size=self.input_size)
         d_real_out = d(input_b)
         d_fake_out = d(generated_b, reuse=True)
@@ -302,16 +308,35 @@ class Trainer:
             else:
                 style_loss = tf.constant(0.)
 
+        self.logger.info(f"GAN type which will be used: `{self.gan_type}`.")
         self.logger.info("Defining generator/discriminator losses...")
-        d_real_loss = tf.reduce_mean(
-            tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
-        )
-        d_fake_loss = tf.reduce_mean(
-            tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_fake_out), d_fake_out)
-        )
-        d_smooth_loss = tf.reduce_mean(
-            tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_smooth_out), d_smooth_out)
-        )
+        if self.gan_type == "gan":
+            self.logger.info("Defining discriminator losses using sigmoid cross entropy...")
+            d_real_loss = tf.reduce_mean(
+                tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
+            )
+            d_fake_loss = tf.reduce_mean(
+                tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_fake_out), d_fake_out)
+            )
+            d_smooth_loss = tf.reduce_mean(
+                tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_smooth_out), d_smooth_out)
+            )
+        elif self.gan_type == "lsgan":
+            self.logger.info("Defining discriminator losses using mean square error...")
+            d_real_loss = tf.reduce_mean(
+                tf.losses.mean_squared_error(tf.ones_like(d_real_out), d_real_out)
+            )
+            d_fake_loss = tf.reduce_mean(
+                tf.losses.mean_squared_error(tf.zeros_like(d_fake_out), d_fake_out)
+            )
+            d_smooth_loss = tf.reduce_mean(
+                tf.losses.mean_squared_error(tf.zeros_like(d_smooth_out), d_smooth_out)
+            )
+        else:
+            wrong_msg = f"Not recognized 'gan_type': {self.gan_type}"
+            self.logger.critical(wrong_msg)
+            raise ValueError(wrong_msg)
+
         d_loss = d_real_loss + d_fake_loss + d_smooth_loss
         self.logger.info(f"Setting d_adv_lambda to {self.d_adv_lambda}...")
         d_loss = self.d_adv_lambda * d_loss
@@ -343,22 +368,22 @@ class Trainer:
             self.logger.info("Loading previous generator...")
             try:
                 g.load(sess, self.model_dir, self.generator_name)
-                self.logger.info(f"Successfully loaded {self.generator_name}...")
+                self.logger.info(f"Successfully loaded `{self.generator_name}`...")
             except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
                     "Previous generator not found, using pre-trained weights..."
                 )
                 try:
                     g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
-                    self.logger.info(f"Successfully loaded {self.pretrain_generator_name}...")
+                    self.logger.info(f"Successfully loaded `{self.pretrain_generator_name}`...")
                 except (tf.errors.NotFoundError, ValueError):
                     self.logger.info(
-                        f"{self.pretrain_generator_name} not found, training from scratch...")
+                        f"`{self.pretrain_generator_name}` not found, training from scratch...")
 
             self.logger.info("Loading previous discriminator...")
             try:
                 d.load(sess, self.model_dir, self.discriminator_name)
-                self.logger.info(f"Successfully loaded {self.discriminator_name}...")
+                self.logger.info(f"Successfully loaded `{self.discriminator_name}`...")
             except (tf.errors.NotFoundError, ValueError):
                 self.logger.info(
                     "Previous discriminator not found, training from scratch..."
@@ -448,8 +473,11 @@ if __name__ == "__main__":
     parser.add_argument("--sample_size", type=int, default=32)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
+    parser.add_argument("--gan_type", type=str, default="gan",
+                        choices=["gan", "lsgan"])
     parser.add_argument("--conv_arch", type=str, default="conv_with_in",
-                        choices=["conv_with_in", "coupled_conv"])
+                        choices=["conv_with_in", "coupled_conv",
+                                 "coupled_conv_resblocks"])
     parser.add_argument("--num_generator_res_blocks", type=int, default=8)
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)

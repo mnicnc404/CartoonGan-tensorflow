@@ -14,8 +14,13 @@ class Generator(NetBase):
         self.num_res_blocks = num_res_blocks
         if self.conv_arch == "coupled_conv":
             self.num_conv_params = 6
+            self.num_res_conv_params = 6
         elif self.conv_arch == "conv_with_in":
             self.num_conv_params = 3
+            self.num_res_conv_params = 3
+        elif self.conv_arch == "coupled_conv_resblocks":
+            self.num_conv_params = 3
+            self.num_res_conv_params = 6
 
     def build_graph(self, x, reuse=False):
         with tf.variable_scope(self.graph_prefix, reuse=reuse):
@@ -43,7 +48,7 @@ class Generator(NetBase):
                     if self.conv_arch == "coupled_conv":
                         x = coupled_conv(x, prev_chs, chs, 3, stride, True, mcnt,
                                          self.get_params(par_pos, par_pos + self.num_conv_params))
-                    elif self.conv_arch == "conv_with_in":
+                    elif self.conv_arch in ["conv_with_in", "coupled_conv_resblocks"]:
                         x = conv_with_in(x, prev_chs, chs, 3, stride, True, mcnt,
                                          self.get_params(par_pos, par_pos + self.num_conv_params))
                     prev_chs = chs
@@ -54,24 +59,24 @@ class Generator(NetBase):
                 for _ in range(self.num_res_blocks):
                     x1 = x
                     self.logger.debug("res conv: %d, %d" % (prev_chs, chs))
-                    if self.conv_arch == "coupled_conv":
+                    if self.conv_arch in ["coupled_conv", "coupled_conv_resblocks"]:
                         x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
-                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                                         self.get_params(par_pos, par_pos + self.num_res_conv_params))
                         x = coupled_conv(x, prev_chs, chs, 3, 1, False, mcnt + 1,
                                          self.get_params(
-                                             par_pos + self.num_conv_params,
-                                             par_pos + self.num_conv_params * 2))
+                                             par_pos + self.num_res_conv_params,
+                                             par_pos + self.num_res_conv_params * 2))
                     elif self.conv_arch == "conv_with_in":
                         x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
-                                         self.get_params(par_pos, par_pos + self.num_conv_params))
+                                         self.get_params(par_pos, par_pos + self.num_res_conv_params))
                         x = conv_with_in(x, prev_chs, chs, 3, 1, False, mcnt + 1,
                                          self.get_params(
-                                             par_pos + self.num_conv_params,
-                                             par_pos + self.num_conv_params * 2))
+                                             par_pos + self.num_res_conv_params,
+                                             par_pos + self.num_res_conv_params * 2))
 
                     x += x1  # no relu as suggested by Sam Gross and Michael Wilber
                     mcnt += 2
-                    par_pos += self.num_conv_params * 2
+                    par_pos += self.num_res_conv_params * 2
             # Upsample
             with tf.variable_scope("Upsample", reuse=reuse):
                 cur_h = input_shape[1] // 4
@@ -87,7 +92,7 @@ class Generator(NetBase):
                     if self.conv_arch == "coupled_conv":
                         x = coupled_conv(x, prev_chs, chs, 3, 1, True, mcnt,
                                          self.get_params(par_pos, par_pos + self.num_conv_params))
-                    elif self.conv_arch == "conv_with_in":
+                    elif self.conv_arch in ["conv_with_in", "coupled_conv_resblocks"]:
                         x = conv_with_in(x, prev_chs, chs, 3, 1, True, mcnt,
                                          self.get_params(par_pos, par_pos + self.num_conv_params))
                     par_pos += self.num_conv_params
