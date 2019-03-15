@@ -308,10 +308,8 @@ class Trainer:
             else:
                 style_loss = tf.constant(0.)
 
-        self.logger.info(f"GAN type which will be used: `{self.gan_type}`.")
-        self.logger.info("Defining generator/discriminator losses...")
+        self.logger.info(f"Defining generator/discriminator losses using `{self.gan_type}`...")
         if self.gan_type == "gan":
-            self.logger.info("Defining discriminator losses using sigmoid cross entropy...")
             d_real_loss = tf.reduce_mean(
                 tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
             )
@@ -322,7 +320,6 @@ class Trainer:
                 tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_smooth_out), d_smooth_out)
             )
         elif self.gan_type == "lsgan":
-            self.logger.info("Defining discriminator losses using mean square error...")
             d_real_loss = tf.reduce_mean(
                 tf.losses.mean_squared_error(tf.ones_like(d_real_out), d_real_out)
             )
