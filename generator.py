@@ -142,7 +142,7 @@ def _test():
     size = None
     shape = [1, size, size, 3]
     x = tf.placeholder(tf.float32, shape, name="input")
-    net = Generator(input_size=size)
+    net = Generator(input_size=size, conv_arch="coupled_conv")
     # net = Generator(conv_arch="conv_with_in", input_size=size)
     out_op = net(x)
     nx = np.random.rand(1, 225, 150, 3).astype(np.float32)
