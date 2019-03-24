@@ -40,7 +40,7 @@ class Trainer:
         target_domain,
         gan_type,
         conv_arch,
-        num_generator_res_blocks,
+        generator_len_bottleneck,
         input_size,
         batch_size,
         sample_size,
@@ -75,7 +75,7 @@ class Trainer:
         self.target_domain = target_domain
         self.gan_type = gan_type
         self.conv_arch = conv_arch
-        self.num_generator_res_blocks = num_generator_res_blocks
+        self.generator_len_bottleneck = generator_len_bottleneck
         self.input_size = input_size
         self.batch_size = batch_size
         self.sample_size = sample_size
@@ -164,11 +164,11 @@ class Trainer:
 
         self.logger.info(
             f"Initializing generator using `{self.conv_arch}` arch, "
-            f"{self.num_generator_res_blocks} residual blocks..."
+            f"{self.generator_len_bottleneck} residual blocks..."
         )
         g = Generator(
             conv_arch=self.conv_arch,
-            num_res_blocks=self.num_generator_res_blocks
+            len_bottleneck=self.generator_len_bottleneck
         )
         generated_images = g(input_images)
 
@@ -278,11 +278,11 @@ class Trainer:
 
         self.logger.info(
             f"Building generator using `{self.conv_arch}` arch, "
-            f"{self.num_generator_res_blocks} residual blocks..."
+            f"{self.generator_len_bottleneck} residual blocks..."
         )
         g = Generator(
             conv_arch=self.conv_arch,
-            num_res_blocks=self.num_generator_res_blocks
+            len_bottleneck=self.generator_len_bottleneck
         )
         generated_b = g(input_a)
 
@@ -475,7 +475,7 @@ if __name__ == "__main__":
     parser.add_argument("--conv_arch", type=str, default="conv_with_in",
                         choices=["conv_with_in", "coupled_conv",
                                  "coupled_conv_resblocks"])
-    parser.add_argument("--num_generator_res_blocks", type=int, default=8)
+    parser.add_argument("--generator_len_bottleneck", type=int, default=4)
     parser.add_argument("--num_steps", type=int, default=600_000)
     parser.add_argument("--reporting_steps", type=int, default=100)
     parser.add_argument("--content_lambda", type=float, default=10)

@@ -1,13 +1,26 @@
 import tensorflow as tf
 
 
+def triplet_conv(x, in_chs, out_chs, k_size, stride, dilate,
+                 mcnt, init_param):
+    assert len(init_param) == 6, len(init_param)
+    with tf.variable_scope(f"triplet_conv_{mcnt}"):
+        pad = (k_size - 1) // 2
+        x = conv(x, in_chs, in_chs, 1, 1, 0, 1, 0, True, *init_param[0:2])
+        x = tf.nn.leaky_relu(x)
+        x = dconv(x, in_chs, k_size, stride, pad, dilate, 1, True, 1, *init_param[2:4])
+        x = conv(x, in_chs, out_chs, 1, 1, 0, 1, 2, True, *init_param[4:])
+        x = tf.nn.leaky_relu(tf.nn.lrn(x, bias=5e-5))
+        return x
+
+
 def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
                  mcnt, init_param):
     with tf.variable_scope(f"coupled_conv_{mcnt}"):
         pad = (k_size - 1) // 2
         x = dconv(x, in_chs, k_size, stride, pad, 0, False, 1, init_param[0])
         x = instance_norm(x, in_chs, 1, 1e-6, *init_param[1:3])
-        x = conv(x, in_chs, out_chs, 1, 1, 0, 2, False, init_param[3])
+        x = conv(x, in_chs, out_chs, 1, 1, 0, 1, 2, False, init_param[3])
         x = instance_norm(x, out_chs, 3, 1e-6, *init_param[4:6])
         return tf.nn.relu(x) if act else x
 
@@ -15,7 +28,7 @@ def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
 def conv_with_in(x, in_chs, out_chs, k_size, stride, act,
                  mcnt, init_param):
     with tf.variable_scope(f"conv_with_in_{mcnt}"):
-        x = conv(x, in_chs, out_chs, k_size, 1, 1, False, init_param[0])
+        x = conv(x, in_chs, out_chs, k_size, 1, 1, 1, False, init_param[0])
         x = instance_norm(x, out_chs, k_size, 1e-6, *init_param[1:3])
         return tf.nn.relu(x) if act else x
 
@@ -83,7 +96,7 @@ def instance_norm(x, chs, mcnt, eps=1e-6, init_g=None, init_b=None):
 
 
 def conv(
-        x, in_chs, out_chs, k_size, stride, pad, mcnt, bias,
+        x, in_chs, out_chs, k_size, stride, pad, dilate, mcnt, bias,
         init_w=None, init_b=None):  # load from numpy
     with tf.variable_scope("conv_%02d" % mcnt):
         weight = tf.get_variable(
@@ -95,7 +108,8 @@ def conv(
         # would do when k_size=3, stride=2, pad=1
         if pad > 0:
             x = tf.pad(x, [[0, 0], [pad, pad], [pad, pad], [0, 0]])
-        x = tf.nn.conv2d(x, weight, [1, stride, stride, 1], "VALID")
+        x = tf.nn.conv2d(x, weight, [1, stride, stride, 1], "VALID",
+                         dilations=[1, dilate, dilate, 1])
         if bias:
             b = tf.get_variable(
                 "bias", None, tf.float32,
@@ -105,7 +119,7 @@ def conv(
 
 
 def dconv(
-        x, in_chs, k_size, stride, pad, mcnt, bias, chs_mult=1,
+        x, in_chs, k_size, stride, pad, dilate, mcnt, bias, chs_mult=1,
         init_w=None, init_b=None):
     with tf.variable_scope("dwise_conv_%02d" % mcnt):
         weight = tf.get_variable(
@@ -115,7 +129,8 @@ def dconv(
             init_w if init_w is not None else tf.contrib.layers.xavier_initializer())
         if pad > 0:
             x = tf.pad(x, [[0, 0], [pad, pad], [pad, pad], [0, 0]])
-        x = tf.nn.depthwise_conv2d(x, weight, [1, stride, stride, 1], "VALID")
+        x = tf.nn.depthwise_conv2d(x, weight, [1, stride, stride, 1], "VALID",
+                                   rate=[dilate, dilate])
         if bias:
             b = tf.get_variable(
                 "bias", None, tf.float32,
