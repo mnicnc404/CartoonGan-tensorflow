@@ -39,7 +39,7 @@ class Trainer:
         source_domain,
         target_domain,
         gan_type,
-        conv_arch,
+        dis_conv_arch,
         generator_len_bottleneck,
         input_size,
         batch_size,
@@ -74,7 +74,7 @@ class Trainer:
         self.source_domain = source_domain
         self.target_domain = target_domain
         self.gan_type = gan_type
-        self.conv_arch = conv_arch
+        self.dis_conv_arch = dis_conv_arch
         self.generator_len_bottleneck = generator_len_bottleneck
         self.input_size = input_size
         self.batch_size = batch_size
@@ -162,14 +162,8 @@ class Trainer:
         ds_iter = ds.make_initializable_iterator()
         input_images = ds_iter.get_next()
 
-        self.logger.info(
-            f"Initializing generator using `{self.conv_arch}` arch, "
-            f"{self.generator_len_bottleneck} residual blocks..."
-        )
-        g = Generator(
-            conv_arch=self.conv_arch,
-            len_bottleneck=self.generator_len_bottleneck
-        )
+        self.logger.info(f"{self.generator_len_bottleneck} generator bottleneck blocks...")
+        g = Generator(len_bottleneck=self.generator_len_bottleneck)
         generated_images = g(input_images)
 
         if self.pass_vgg:
@@ -276,18 +270,12 @@ class Trainer:
         input_b = ds_b_iter.get_next()
         input_b_smooth = ds_b_smooth_iter.get_next()
 
-        self.logger.info(
-            f"Building generator using `{self.conv_arch}` arch, "
-            f"{self.generator_len_bottleneck} residual blocks..."
-        )
-        g = Generator(
-            conv_arch=self.conv_arch,
-            len_bottleneck=self.generator_len_bottleneck
-        )
+        self.logger.info(f"{self.generator_len_bottleneck} generator bottleneck blocks...")
+        g = Generator(len_bottleneck=self.generator_len_bottleneck)
         generated_b = g(input_a)
 
-        self.logger.info(f"Building discriminator using `{self.conv_arch}` arch...")
-        d = Discriminator(conv_arch=self.conv_arch, input_size=self.input_size)
+        self.logger.info(f"Building discriminator using `{self.dis_conv_arch}` arch...")
+        d = Discriminator(conv_arch=self.dis_conv_arch, input_size=self.input_size)
         d_real_out = d(input_b)
         d_fake_out = d(generated_b, reuse=True)
         d_smooth_out = d(input_b_smooth, reuse=True)
@@ -472,7 +460,7 @@ if __name__ == "__main__":
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--gan_type", type=str, default="gan",
                         choices=["gan", "lsgan"])
-    parser.add_argument("--conv_arch", type=str, default="conv_with_in",
+    parser.add_argument("--dis_conv_arch", type=str, default="conv_with_in",
                         choices=["conv_with_in", "coupled_conv",
                                  "coupled_conv_resblocks"])
     parser.add_argument("--generator_len_bottleneck", type=int, default=4)
