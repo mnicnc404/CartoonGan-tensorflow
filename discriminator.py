@@ -23,7 +23,7 @@ class Discriminator(NetBase):
             chs = self.base_chs
             self.logger.debug("initial conv: 3, %d" % chs)
             # Init conv
-            x = conv(x, 3, chs, 3, 1, 1, 0, False, self.get_params(0))
+            x = conv(x, 3, chs, 3, 1, 1, 1, 0, False, self.get_params(0))
             x = tf.nn.leaky_relu(batch_norm(
                 x, chs, 1, 1e-5,
                 *self.get_params(1, 3)))
@@ -51,7 +51,8 @@ class Discriminator(NetBase):
                 par_pos += self.num_conv_params
                 mcnt += 1
             self.logger.debug("final conv: %d, 1" % prev_chs)
-            x = conv(x, prev_chs, 1, 3, 1, 1, mcnt, True, *self.get_params(par_pos, par_pos + 2))
+            x = conv(x, prev_chs, 1, 3, 1, 1, 1, mcnt, True,
+                     *self.get_params(par_pos, par_pos + 2))
             par_pos += 2
             self.logger.debug("%d param tensors traversed" % par_pos)
         if self.to_save_vars is None:
@@ -70,7 +71,7 @@ def _test():
     logging.basicConfig(level=logging.DEBUG)
     size = 256
     x = tf.placeholder(tf.float32, [2, size, size, 3])
-    net = Discriminator(input_size=size)
+    net = Discriminator(conv_arch='conv_with_in', input_size=size)
     nx = np.random.rand(2, size, size, 3).astype(np.float32)
     out_op = net.build_graph(x)
     out_op2 = net.build_graph(x, True)

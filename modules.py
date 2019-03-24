@@ -1,6 +1,9 @@
 import tensorflow as tf
 
 
+__initializer__ = tf.keras.initializers.glorot_normal()
+
+
 def triplet_conv(x, in_chs, out_chs, k_size, stride, dilate,
                  mcnt, init_param):
     assert len(init_param) == 6, len(init_param)
@@ -18,7 +21,7 @@ def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
                  mcnt, init_param):
     with tf.variable_scope(f"coupled_conv_{mcnt}"):
         pad = (k_size - 1) // 2
-        x = dconv(x, in_chs, k_size, stride, pad, 0, False, 1, init_param[0])
+        x = dconv(x, in_chs, k_size, stride, pad, 1, 0, False, 1, init_param[0])
         x = instance_norm(x, in_chs, 1, 1e-6, *init_param[1:3])
         x = conv(x, in_chs, out_chs, 1, 1, 0, 1, 2, False, init_param[3])
         x = instance_norm(x, out_chs, 3, 1e-6, *init_param[4:6])
@@ -28,8 +31,9 @@ def coupled_conv(x, in_chs, out_chs, k_size, stride, act,
 def conv_with_in(x, in_chs, out_chs, k_size, stride, act,
                  mcnt, init_param):
     with tf.variable_scope(f"conv_with_in_{mcnt}"):
-        x = conv(x, in_chs, out_chs, k_size, 1, 1, 1, False, init_param[0])
-        x = instance_norm(x, out_chs, k_size, 1e-6, *init_param[1:3])
+        pad = (k_size - 1) // 2
+        x = conv(x, in_chs, out_chs, k_size, 1, pad, 1, 0, False, init_param[0])
+        x = instance_norm(x, out_chs, 1, 1e-6, *init_param[1:3])
         return tf.nn.relu(x) if act else x
 
 
@@ -99,11 +103,12 @@ def conv(
         x, in_chs, out_chs, k_size, stride, pad, dilate, mcnt, bias,
         init_w=None, init_b=None):  # load from numpy
     with tf.variable_scope("conv_%02d" % mcnt):
+        w_shape = [k_size, k_size, in_chs, out_chs]
         weight = tf.get_variable(
             "kernel",
-            None if init_w is not None else [k_size, k_size, in_chs, out_chs],
+            None,
             tf.float32,
-            init_w if init_w is not None else tf.contrib.layers.xavier_initializer())
+            init_w if init_w is not None else __initializer__(w_shape))
         # "SAME" pad in tf.nn.conv2d does not do the same as pytorch
         # would do when k_size=3, stride=2, pad=1
         if pad > 0:
@@ -122,11 +127,12 @@ def dconv(
         x, in_chs, k_size, stride, pad, dilate, mcnt, bias, chs_mult=1,
         init_w=None, init_b=None):
     with tf.variable_scope("dwise_conv_%02d" % mcnt):
+        w_shape = [k_size, k_size, in_chs, chs_mult]
         weight = tf.get_variable(
             "kernel",
-            None if init_w is not None else [k_size, k_size, in_chs, chs_mult],
+            None,
             tf.float32,
-            init_w if init_w is not None else tf.contrib.layers.xavier_initializer())
+            init_w if init_w is not None else __initializer__(w_shape))
         if pad > 0:
             x = tf.pad(x, [[0, 0], [pad, pad], [pad, pad], [0, 0]])
         x = tf.nn.depthwise_conv2d(x, weight, [1, stride, stride, 1], "VALID",
@@ -144,7 +150,7 @@ def _test():
     x = tf.placeholder(tf.float32, [2, 35, 35, 3])
     is_training = tf.placeholder(tf.bool)
     nx = np.random.rand(2, 35, 35, 3).astype(np.float32)
-    out_op = coupled_conv(x, 3, 30, 5, 2, is_training, 0, False, None)
+    out_op = coupled_conv(x, 3, 30, 5, 2, True, 0, [None]*4)
     out_op = tf.image.resize_bilinear(out_op, [35, 35])
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
