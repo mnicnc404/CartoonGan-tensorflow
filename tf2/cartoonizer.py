@@ -8,7 +8,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime
-from model import build_model
+from cartoongan import build_model
 
 STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
 VALID_EXTENSIONS = ['jpg', 'png', 'gif']
@@ -16,7 +16,6 @@ VALID_EXTENSIONS = ['jpg', 'png', 'gif']
 
 # TODO: add documentation of each function
 # TODO: readme, install guide(pip install -r requirements.txt + keras-contri?)
-# TODO: 寫一個專門的 colab notebook 利用 GPU 作轉換 (可以隨意下載一張圖 然後做 inference)
 
 
 parser = argparse.ArgumentParser(description="cartoonize real world images to specified cartoon style")
@@ -44,12 +43,11 @@ parser.add_argument("--skip_comparison", action="store_true",
 parser.add_argument("-v", "--comparison_view", type=str, default="horizontal",
                     choices=["horizontal", "vertical", "grid"],
                     help="specify how input image and transformed are concatenated for easy comparison")
+parser.add_argument("--show_tf_cpp_log", action="store_true")
 
-# TODO: gpu / cpu, auto adjust batch size
 # TODO: limit image size
 # TODO: limit gif length
 # TODO: processing mp4 possible? how about converting to mp4?
-# zip all local images to s3 and download to colab for inference
 
 args = parser.parse_args()
 
@@ -306,6 +304,9 @@ if __name__ == "__main__":
     stdhandler = logging.StreamHandler(sys.stdout)
     stdhandler.setFormatter(formatter)
     logger.addHandler(stdhandler)
+
+    if not args.show_tf_cpp_log:
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
     main()
 
