@@ -13,12 +13,13 @@ from cartoongan import build_model
 STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
 VALID_EXTENSIONS = ['jpg', 'png', 'gif']
 
-
+# TODO: add self-trained cartoongan: MODE
 # TODO: add documentation of each function
 # TODO: readme, install guide(pip install -r requirements.txt + keras-contri?)
+# TODO: adjust options' order
+# TODO: fix screwy gif
 
-
-parser = argparse.ArgumentParser(description="cartoonize real world images to specified cartoon style")
+parser = argparse.ArgumentParser(description="transform real world images to specified cartoon style(s)")
 parser.add_argument("-s", "--styles", nargs="+", default=[STYLES[0]],
                     help="specify (multiple) cartoon styles which will be used to transform input images.")
 parser.add_argument("-a", "--all_styles", action="store_true",
@@ -28,25 +29,32 @@ parser.add_argument("-i", "--input_dir", type=str, default="input_images",
 parser.add_argument("-o", "--output_dir", type=str, default="output_images",
                     help="directory where transformed images are saved")
 parser.add_argument("-b", "--batch_size", type=int, default=1,
-                    help="number of images that will be transformed in parallel to speed up processing")
+                    help="number of images that will be transformed in parallel to speed up processing. "
+                         "higher value like 4 is recommended if there are gpus.")
 parser.add_argument("--ignore_gif", action="store_true",
                     help="transforming gif images can take long time. enable this when you want to ignore gifs")
+parser.add_argument("--overwrite", action="store_true",
+                    help="enable this if you want to regenerate outputs regardless of existing results")
+parser.add_argument("--skip_comparison", action="store_true",
+                    help="enable this if you only want individual style result and to save processing time")
+parser.add_argument("-v", "--comparison_view", type=str, default="horizontal",
+                    choices=["horizontal", "vertical", "grid"],
+                    help="specify how input images and transformed images are concatenated for easier comparison")
+parser.add_argument("-f", "--gif_frame_frequency", type=int, default=2,
+                    help="how often should a frame in gif be cartoonized. freq=1 means that every frame "
+                         "in the gif will be cartoonized by default. set higher frequency can save processing "
+                         "time while make the cartoonized gif less smooth")
+parser.add_argument("-n", "--max_num_frames", type=int, default=100,
+                    help="max number of frames that will be extracted from a gif. set higher value if longer gif "
+                         "is needed")
 parser.add_argument("--logging_lvl", type=str, default="info",
                     choices=["debug", "info", "warning", "error", "critical"],
                     help="logging level which decide how verbosely the program will be. set to `debug` if necessary")
 parser.add_argument("--debug", action="store_true",
                     help="show the most detailed logging messages for debugging purpose")
-parser.add_argument("--overwrite", action="store_true",
-                    help="enable this if you want to regenerate output regardless of existing results")
-parser.add_argument("--skip_comparison", action="store_true",
-                    help="enable this if you only want individual style result and to save processing time")
-parser.add_argument("-v", "--comparison_view", type=str, default="horizontal",
-                    choices=["horizontal", "vertical", "grid"],
-                    help="specify how input image and transformed are concatenated for easy comparison")
 parser.add_argument("--show_tf_cpp_log", action="store_true")
 
 # TODO: limit image size
-# TODO: limit gif length
 # TODO: processing mp4 possible? how about converting to mp4?
 
 args = parser.parse_args()
@@ -120,7 +128,7 @@ def save_concatenated_image(image_paths, image_folder="comparison"):
     return image_path
 
 
-def convert_gif_to_png(gif_path, max_num_frames=100):
+def convert_gif_to_png(gif_path):
     logger.debug(f"`{gif_path}` is a gif, extracting png images from it...")
     gif_filename = gif_path.split("/")[-1].replace(".gif", "")
     image = PIL.Image.open(gif_path)
@@ -137,19 +145,24 @@ def convert_gif_to_png(gif_path, max_num_frames=100):
     if prev_generated_png_paths:
         return prev_generated_png_paths
 
+    num_processed_frames = 0
     logger.debug("Generating png images...")
     try:
-        while i < max_num_frames:
+        while num_processed_frames < args.max_num_frames:
+
             image.putpalette(palette)
             extracted_image = PIL.Image.new("RGBA", image.size)
             extracted_image.paste(image)
 
-            png_filename = f"{i + 1}.png"
-            png_path = os.path.join(png_dir, png_filename)
-            extracted_image.save(png_path)
-            png_paths.append(png_path)
-            i += 1
+            if i % args.gif_frame_frequency == 0:
+                png_filename = f"{i + 1}.png"
+                png_path = os.path.join(png_dir, png_filename)
+                extracted_image.save(png_path)
+                png_paths.append(png_path)
+                num_processed_frames += 1
+
             image.seek(image.tell() + 1)
+            i += 1
 
     except EOFError:
         pass  # end of sequence
