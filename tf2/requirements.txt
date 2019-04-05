@@ -64,9 +64,9 @@ termcolor==1.1.0
 terminado==0.8.1
 testpath==0.4.2
 tf-estimator-nightly==1.14.0.dev2019030115
-tf-keras-contrib==2.0.8
 tf-nightly-2.0-preview==2.0.0.dev20190403
 tornado==6.0.2
+tqdm==4.31.1
 traitlets==4.3.2
 wcwidth==0.1.7
 webencodings==0.5.1

@@ -1,11 +1,12 @@
-import argparse
-import logging
 import os
 import PIL
 import sys
-import numpy as np
 import glob
 import imageio
+import logging
+import argparse
+import numpy as np
+from tqdm import tqdm
 from model import build_model
 
 STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
@@ -13,8 +14,8 @@ VALID_EXTENSIONS = ['jpg', 'png', 'gif']
 
 
 # TODO: add documentation of each function
-# TODO: readme, install guide
-# TODO: 寫一個專門的 colab notebook 利用 GPU 作轉換
+# TODO: readme, install guide(pip install -r requirements.txt + keras-contri?)
+# TODO: 寫一個專門的 colab notebook 利用 GPU 作轉換 (可以隨意下載一張圖 然後做 inference)
 
 
 parser = argparse.ArgumentParser(description="cartoonize real world images to specified cartoon style")
@@ -26,6 +27,8 @@ parser.add_argument("-i", "--input_dir", type=str, default="input_images",
                     help="directory with images to be transformed")
 parser.add_argument("-o", "--output_dir", type=str, default="output_images",
                     help="directory where transformed images are saved")
+parser.add_argument("-b", "--batch_size", type=int, default=1,
+                    help="number of images that will be transformed in parallel to speed up")  # TODO: batch processing
 parser.add_argument("--ignore_gif", action="store_true",
                     help="enable this when you want to skip transforming gif image to save processing time")
 parser.add_argument("--logging_lvl", type=str, default="info",
@@ -36,10 +39,15 @@ parser.add_argument("--overwrite", action="store_true",
                     help="enable this if you want to regenerate output regardless of existing results")
 parser.add_argument("--skip_comparison", action="store_true",
                     help="enable this if you only want individual style result and to save processing time")
+parser.add_argument("--concatenate_direction", type=str, default="horizontal", choices=["horizontal", "vertical"],
+                    help="the way how input image and transformed are concatenated for easy comparison")  # TODO: test the feature
+
 
 # TODO: gpu / cpu
 # TODO: limit image size
 # TODO: limit gif length
+# TODO: processing mp4 possible? how about converting to mp4?
+# zip all local images to s3 and download to colab for inference
 
 args = parser.parse_args()
 
@@ -66,12 +74,15 @@ def post_processing(transformed_image):
 
 
 def save_transformed_image(output_image, img_filename, save_dir):
-    image = PIL.Image.fromarray(output_image.astype("uint8"))
-
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+
     transformed_image_path = os.path.join(save_dir, img_filename)
-    image.save(transformed_image_path)
+
+    if output_image is not None:
+        image = PIL.Image.fromarray(output_image.astype("uint8"))
+        image.save(transformed_image_path)
+
     return transformed_image_path
 
 
@@ -81,10 +92,12 @@ def save_concatenated_image(image_paths, image_folder="comparison"):
     # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
     min_shape = sorted([(np.sum(i.size), i.size) for i in images])[0][1]
     array = [np.asarray(i.resize(min_shape)) for i in images]
-    images_comb = np.hstack(array)
-    # TODO: add a parser option for horizontal / vertical concatenate
 
-    # save that beautiful picture
+    if args.concatenate_direction == "horizontal":
+        images_comb = np.hstack(array)
+    else:
+        images_comb = np.vstack(array)
+
     images_comb = PIL.Image.fromarray(images_comb)
     file_name = image_paths[0].split("/")[-1]
 
@@ -136,10 +149,14 @@ def convert_gif_to_png(gif_path, max_num_frames=100):
     return png_paths
 
 
-def transform_png_images(image_paths, model, style):
+def transform_png_images(image_paths, model, style, return_existing_result=False):
+    """"""
     transformed_image_paths = list()
     save_dir = os.path.join("/".join(image_paths[0].split("/")[:-1]), style)
     logger.debug(f"Transforming {len(image_paths)} images and saving them to {save_dir}....")
+
+    if return_existing_result:
+        return glob.glob(os.path.join(save_dir, "*.png"))
 
     for image_path in image_paths:
         image_filename = image_path.split("/")[-1]
@@ -163,7 +180,7 @@ def save_png_images_as_gif(image_paths, image_filename, style="comparison"):
 
     with imageio.get_writer(gif_path, mode='I') as writer:
         file_names = sorted(image_paths, key=lambda x: int(x.split('/')[-1].replace('.png', '')))
-        #   file_names = file_names[::5]
+        #   file_names = file_names[::5]  # TODO: add option to pick every n frames
         logger.debug(f"Combining {len(file_names)} png images into a single gif...")
         last = -1
         for i, filename in enumerate(file_names):
@@ -201,9 +218,10 @@ def main():
         image_paths.extend(glob.glob(os.path.join(args.input_dir, f"*.{ext}")))
     logger.info(f"Preparing to transform {len(image_paths)} images from `{args.input_dir}` directory...")
 
-    for image_path in image_paths:  # TODO: tqdm
-        logger.info(f"Transforming {image_path}...")
+    progress_bar = tqdm(image_paths)
+    for image_path in progress_bar:
         image_filename = image_path.split("/")[-1]
+        progress_bar.set_description(f"Transforming {image_filename}")
 
         if image_filename.endswith(".gif") and not args.ignore_gif:
             png_paths = convert_gif_to_png(image_path)
@@ -211,13 +229,14 @@ def main():
             png_paths_list = [png_paths]
             num_images = len(png_paths)
             for model, style in zip(models, styles):
-                if result_exist(image_path, style) and not args.overwrite:
-                    logger.debug("Skipping because result already exist and `overwrite` is disabled...")
-                    continue
+                return_existing_result = result_exist(image_path, style) or args.overwrite
 
-                transformed_png_paths = transform_png_images(png_paths, model, style)
-                save_png_images_as_gif(transformed_png_paths, image_filename, style)
+                transformed_png_paths = transform_png_images(png_paths, model, style,
+                                                             return_existing_result=return_existing_result)
                 png_paths_list.append(transformed_png_paths)
+
+                if not return_existing_result:
+                    save_png_images_as_gif(transformed_png_paths, image_filename, style)
 
             rearrange_paths_list = [[l[i] for l in png_paths_list] for i in range(num_images)]
 
@@ -233,20 +252,19 @@ def main():
 
         else:
             related_image_paths = [image_path]
-            # TODO: skip already-transformed images
-
             input_image = pre_processing(image_path)
 
             for model, style in zip(models, styles):
-                if result_exist(image_path, style) and not args.overwrite:
-                    logger.debug("Skipping because result already exist and `overwrite` is disabled...")
-                    continue
-
-                transformed_image = model(input_image)
-                output_image = post_processing(transformed_image)
-
                 save_dir = os.path.join(args.output_dir, style)
-                transformed_image_path = save_transformed_image(output_image, image_filename, save_dir)
+                return_existing_result = result_exist(image_path, style) and not args.overwrite
+
+                if not return_existing_result:
+                    transformed_image = model(input_image)
+                    output_image = post_processing(transformed_image)
+                    transformed_image_path = save_transformed_image(output_image, image_filename, save_dir)
+                else:
+                    transformed_image_path = save_transformed_image(None, image_filename, save_dir)
+
                 related_image_paths.append(transformed_image_path)
 
             if not args.skip_comparison:
@@ -275,6 +293,8 @@ if __name__ == "__main__":
     logger.addHandler(stdhandler)
 
     main()
+
+
 
 
 
