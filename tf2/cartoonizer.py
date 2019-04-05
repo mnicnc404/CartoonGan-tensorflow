@@ -7,6 +7,7 @@ import logging
 import argparse
 import numpy as np
 from tqdm import tqdm
+from datetime import datetime
 from model import build_model
 
 STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
@@ -19,31 +20,32 @@ VALID_EXTENSIONS = ['jpg', 'png', 'gif']
 
 
 parser = argparse.ArgumentParser(description="cartoonize real world images to specified cartoon style")
-parser.add_argument("-s", "--style", type=str, default="shinkai", choices=STYLES,
-                    help="cartoon style to be used")
-parser.add_argument("-a", "--all_style", action="store_true",
-                    help="set true if all style result is desired")
+parser.add_argument("-s", "--styles", nargs="+", default=[STYLES[0]],
+                    help="specify (multiple) cartoon styles which will be used to transform input images.")
+parser.add_argument("-a", "--all_styles", action="store_true",
+                    help="set true if all styled results are desired")
 parser.add_argument("-i", "--input_dir", type=str, default="input_images",
                     help="directory with images to be transformed")
 parser.add_argument("-o", "--output_dir", type=str, default="output_images",
                     help="directory where transformed images are saved")
 parser.add_argument("-b", "--batch_size", type=int, default=1,
-                    help="number of images that will be transformed in parallel to speed up")  # TODO: batch processing
+                    help="number of images that will be transformed in parallel to speed up processing")
 parser.add_argument("--ignore_gif", action="store_true",
-                    help="enable this when you want to skip transforming gif image to save processing time")
+                    help="transforming gif images can take long time. enable this when you want to ignore gifs")
 parser.add_argument("--logging_lvl", type=str, default="info",
-                    choices=["debug", "info", "warning", "error", "critical"])
+                    choices=["debug", "info", "warning", "error", "critical"],
+                    help="logging level which decide how verbosely the program will be. set to `debug` if necessary")
 parser.add_argument("--debug", action="store_true",
-                    help="show the most detailed logging messages for debug purpose")
+                    help="show the most detailed logging messages for debugging purpose")
 parser.add_argument("--overwrite", action="store_true",
                     help="enable this if you want to regenerate output regardless of existing results")
 parser.add_argument("--skip_comparison", action="store_true",
                     help="enable this if you only want individual style result and to save processing time")
-parser.add_argument("--concatenate_direction", type=str, default="horizontal", choices=["horizontal", "vertical"],
-                    help="the way how input image and transformed are concatenated for easy comparison")  # TODO: test the feature
+parser.add_argument("-v", "--comparison_view", type=str, default="horizontal",
+                    choices=["horizontal", "vertical", "grid"],
+                    help="specify how input image and transformed are concatenated for easy comparison")
 
-
-# TODO: gpu / cpu
+# TODO: gpu / cpu, auto adjust batch size
 # TODO: limit image size
 # TODO: limit gif length
 # TODO: processing mp4 possible? how about converting to mp4?
@@ -54,18 +56,20 @@ args = parser.parse_args()
 TEMPORARY_DIR = f"{args.output_dir}/.tmp"
 
 
-def pre_processing(image_path):
+def pre_processing(image_path, expand_dim=True):
     input_image = PIL.Image.open(image_path).convert("RGB")
     input_image = np.asarray(input_image)
     input_image = input_image.astype(np.float32)
     input_image = input_image[:, :, [2, 1, 0]]
-    input_image = np.expand_dims(input_image, axis=0)
+    if expand_dim:
+        input_image = np.expand_dims(input_image, axis=0)
     # logger.debug(f"input_image.shape after pre-processing: {input_image.shape}")
     return input_image
 
 
 def post_processing(transformed_image):
-    transformed_image = transformed_image.numpy()
+    if not type(transformed_image) == np.ndarray:
+        transformed_image = transformed_image.numpy()
     transformed_image = transformed_image[0]
     transformed_image = transformed_image[:, :, [2, 1, 0]]
     transformed_image = transformed_image * 0.5 + 0.5
@@ -93,8 +97,15 @@ def save_concatenated_image(image_paths, image_folder="comparison"):
     min_shape = sorted([(np.sum(i.size), i.size) for i in images])[0][1]
     array = [np.asarray(i.resize(min_shape)) for i in images]
 
-    if args.concatenate_direction == "horizontal":
+    if args.comparison_view == "horizontal":
         images_comb = np.hstack(array)
+    elif args.comparison_view == "grid":
+        if len(args.styles) + 1 == 4:
+            first_row = np.hstack(array[:2])
+            second_row = np.hstack(array[2:])
+            images_comb = np.vstack([first_row, second_row])
+        else:
+            images_comb = np.hstack(array)
     else:
         images_comb = np.vstack(array)
 
@@ -150,7 +161,6 @@ def convert_gif_to_png(gif_path, max_num_frames=100):
 
 
 def transform_png_images(image_paths, model, style, return_existing_result=False):
-    """"""
     transformed_image_paths = list()
     save_dir = os.path.join("/".join(image_paths[0].split("/")[:-1]), style)
     logger.debug(f"Transforming {len(image_paths)} images and saving them to {save_dir}....")
@@ -158,15 +168,20 @@ def transform_png_images(image_paths, model, style, return_existing_result=False
     if return_existing_result:
         return glob.glob(os.path.join(save_dir, "*.png"))
 
-    for image_path in image_paths:
-        image_filename = image_path.split("/")[-1]
+    num_batch = int(np.ceil(len(image_paths) / args.batch_size))
+    image_paths = np.array_split(image_paths, num_batch)
 
-        input_image = pre_processing(image_path)
-        transformed_image = model(input_image)
-        output_image = post_processing(transformed_image)
-
-        path = save_transformed_image(output_image, image_filename, save_dir)
-        transformed_image_paths.append(path)
+    logger.debug(f"Processing {num_batch} batches with batch_size={args.batch_size}...")
+    for batch_image_paths in image_paths:
+        image_filenames = [path.split("/")[-1] for path in batch_image_paths]
+        input_images = [pre_processing(path, expand_dim=False) for path in batch_image_paths]
+        input_images = np.stack(input_images, axis=0)
+        transformed_images = model(input_images)
+        output_images = [post_processing(image)
+                         for image in np.split(transformed_images, transformed_images.shape[0])]
+        paths = [save_transformed_image(img, f, save_dir)
+                 for img, f in zip(output_images, image_filenames)]
+        transformed_image_paths.extend(paths)
 
     return transformed_image_paths
 
@@ -181,7 +196,7 @@ def save_png_images_as_gif(image_paths, image_filename, style="comparison"):
     with imageio.get_writer(gif_path, mode='I') as writer:
         file_names = sorted(image_paths, key=lambda x: int(x.split('/')[-1].replace('.png', '')))
         #   file_names = file_names[::5]  # TODO: add option to pick every n frames
-        logger.debug(f"Combining {len(file_names)} png images into a single gif...")
+        logger.debug(f"Combining {len(file_names)} png images into {gif_path}...")
         last = -1
         for i, filename in enumerate(file_names):
             frame = 2 * (i ** 0.5)
@@ -195,7 +210,7 @@ def result_exist(image_path, style):
 
 
 def main():
-
+    start = datetime.now()
     logger.info(f"Transformed images will be saved to `{args.output_dir}` folder.")
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
@@ -204,13 +219,11 @@ def main():
     if not os.path.exists(TEMPORARY_DIR):
         os.makedirs(TEMPORARY_DIR)
 
-    if args.all_style:
-        styles = STYLES
-        models = [build_model(s) for s in styles]
-    else:
-        style = args.style
-        models = [build_model(style)]
-        styles = [style]
+    # decide what styles to used in this execution
+    styles = STYLES if args.all_styles else args.styles
+    # TODO: check style input
+    models = [build_model(s) for s in styles]
+
     logger.info(f"Cartoonizing images using {', '.join(styles)} style...")
 
     image_paths = []
@@ -273,6 +286,8 @@ def main():
     # TODO: decide wether to delete tmp dir
 
     # TODO: summary
+    time_elapsed = datetime.now() - start
+    logger.info(f"Total processing time: {time_elapsed}")
 
 
 if __name__ == "__main__":
