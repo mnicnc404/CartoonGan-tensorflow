@@ -8,16 +8,23 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime
-from cartoongan import build_model
+from style_transfer.cartoongan import cartoongan
+from style_transfer.comixgan import comixgan
 
-STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
+
+CARTOONGAN_STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
+COMIXGAN_STYLES = ["comic", "comic2"]
+STYLES = CARTOONGAN_STYLES + COMIXGAN_STYLES
 VALID_EXTENSIONS = ['jpg', 'png', 'gif']
 
+# TODO: mp4 processing
 # TODO: add self-trained cartoongan: MODE
 # TODO: add documentation of each function
 # TODO: readme, install guide(pip install -r requirements.txt + keras-contri?)
 # TODO: adjust options' order
 # TODO: fix screwy gif
+# TODO: gif categories: [idol, movie(marvel, titanic), meme, animals(cat, dog), sports(basketball), natural]
+
 
 parser = argparse.ArgumentParser(description="transform real world images to specified cartoon style(s)")
 parser.add_argument("-s", "--styles", nargs="+", default=[STYLES[0]],
@@ -62,24 +69,36 @@ args = parser.parse_args()
 TEMPORARY_DIR = f"{args.output_dir}/.tmp"
 
 
-def pre_processing(image_path, expand_dim=True):
+def pre_processing(image_path, style, expand_dim=True):
     input_image = PIL.Image.open(image_path).convert("RGB")
     input_image = np.asarray(input_image)
     input_image = input_image.astype(np.float32)
-    input_image = input_image[:, :, [2, 1, 0]]
+
+    if style in COMIXGAN_STYLES:
+        input_image = (input_image / 255 * 2) - 1
+    elif style in CARTOONGAN_STYLES:
+        input_image = input_image[:, :, [2, 1, 0]]
+    else:
+        logger.error("No pre-processing!")
+
     if expand_dim:
         input_image = np.expand_dims(input_image, axis=0)
-    # logger.debug(f"input_image.shape after pre-processing: {input_image.shape}")
     return input_image
 
 
-def post_processing(transformed_image):
+def post_processing(transformed_image, style):
     if not type(transformed_image) == np.ndarray:
         transformed_image = transformed_image.numpy()
     transformed_image = transformed_image[0]
-    transformed_image = transformed_image[:, :, [2, 1, 0]]
-    transformed_image = transformed_image * 0.5 + 0.5
-    transformed_image = transformed_image * 255
+
+    if style in COMIXGAN_STYLES:
+        transformed_image = ((transformed_image + 1) / 2) * 255
+    elif style in CARTOONGAN_STYLES:
+        transformed_image = transformed_image[:, :, [2, 1, 0]]
+        transformed_image = transformed_image * 0.5 + 0.5
+        transformed_image = transformed_image * 255
+    else:
+        logger.error("No post-processing!")
     return transformed_image
 
 
@@ -97,7 +116,7 @@ def save_transformed_image(output_image, img_filename, save_dir):
 
 
 def save_concatenated_image(image_paths, image_folder="comparison"):
-    # TODO: add style as title
+    # TODO: add style as title, refer Comixify (as a option: add_style_name)
     images = [PIL.Image.open(i).convert('RGB') for i in image_paths]
     # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
     min_shape = sorted([(np.sum(i.size), i.size) for i in images])[0][1]
@@ -185,10 +204,10 @@ def transform_png_images(image_paths, model, style, return_existing_result=False
     logger.debug(f"Processing {num_batch} batches with batch_size={args.batch_size}...")
     for batch_image_paths in image_paths:
         image_filenames = [path.split("/")[-1] for path in batch_image_paths]
-        input_images = [pre_processing(path, expand_dim=False) for path in batch_image_paths]
+        input_images = [pre_processing(path, style=style, expand_dim=False) for path in batch_image_paths]
         input_images = np.stack(input_images, axis=0)
         transformed_images = model(input_images)
-        output_images = [post_processing(image)
+        output_images = [post_processing(image, style=style)
                          for image in np.split(transformed_images, transformed_images.shape[0])]
         paths = [save_transformed_image(img, f, save_dir)
                  for img, f in zip(output_images, image_filenames)]
@@ -206,12 +225,8 @@ def save_png_images_as_gif(image_paths, image_filename, style="comparison"):
 
     with imageio.get_writer(gif_path, mode='I') as writer:
         file_names = sorted(image_paths, key=lambda x: int(x.split('/')[-1].replace('.png', '')))
-        #   file_names = file_names[::5]  # TODO: add option to pick every n frames
         logger.debug(f"Combining {len(file_names)} png images into {gif_path}...")
-        last = -1
         for i, filename in enumerate(file_names):
-            frame = 2 * (i ** 0.5)
-
             image = imageio.imread(filename)
             writer.append_data(image)
 
@@ -221,6 +236,9 @@ def result_exist(image_path, style):
 
 
 def main():
+
+    # TODO: print formatted information, like sampled frame etc
+
     start = datetime.now()
     logger.info(f"Transformed images will be saved to `{args.output_dir}` folder.")
     if not os.path.exists(args.output_dir):
@@ -233,7 +251,15 @@ def main():
     # decide what styles to used in this execution
     styles = STYLES if args.all_styles else args.styles
     # TODO: check style input
-    models = [build_model(s) for s in styles]
+
+    models = list()
+    for style in styles:
+        if style in COMIXGAN_STYLES:
+            models.append(comixgan.load_model(style))
+        elif style in CARTOONGAN_STYLES:
+            models.append(cartoongan.load_model(style))
+        else:
+            logger.error(f"Non recognizable style: {s}")
 
     logger.info(f"Cartoonizing images using {', '.join(styles)} style...")
 
@@ -276,15 +302,14 @@ def main():
 
         else:
             related_image_paths = [image_path]
-            input_image = pre_processing(image_path)
-
             for model, style in zip(models, styles):
+                input_image = pre_processing(image_path, style=style)
                 save_dir = os.path.join(args.output_dir, style)
                 return_existing_result = result_exist(image_path, style) and not args.overwrite
 
                 if not return_existing_result:
                     transformed_image = model(input_image)
-                    output_image = post_processing(transformed_image)
+                    output_image = post_processing(transformed_image, style=style)
                     transformed_image_path = save_transformed_image(output_image, image_filename, save_dir)
                 else:
                     transformed_image_path = save_transformed_image(None, image_filename, save_dir)
@@ -295,7 +320,6 @@ def main():
                 save_concatenated_image(related_image_paths)
 
     # TODO: decide wether to delete tmp dir
-
     # TODO: summary
     time_elapsed = datetime.now() - start
     logger.info(f"Total processing time: {time_elapsed}")
