@@ -21,14 +21,14 @@ class ReflectionPadding2D(Layer):
         return tf.pad(x, [[0, 0], [h_pad, h_pad], [w_pad, w_pad], [0, 0]], "REFLECT")
 
 
-class Conv(Model):
+class FlatConv(Model):
     def __init__(self,
                  filters,
                  kernel_size,
                  padding=(1, 1),
                  norm_type="instance",
                  pad_type="reflect"):
-        super(Conv, self).__init__(name="Conv")
+        super(FlatConv, self).__init__(name="FlatConv")
         self.filters = filters
         self.kernel_size = kernel_size
         self.padding = padding
@@ -50,7 +50,7 @@ class Conv(Model):
         self.act = ReLU()
 
     def build(self, input_shape):
-        super(Conv, self).build(input_shape)
+        super(FlatConv, self).build(input_shape)
 
     def call(self, x, training=False):
         x = self.pad(x)
@@ -217,7 +217,7 @@ class Generator(Model):
         self.pad_type = pad_type
         self.base_filters = base_filters
         self.num_resblocks = num_resblocks
-        self.flat_conv1 = Conv(filters=self.base_filters,
+        self.flat_conv1 = FlatConv(filters=self.base_filters,
                                kernel_size=7,
                                padding=(3, 3),
                                norm_type=self.norm_type,
@@ -272,11 +272,10 @@ if __name__ == "__main__":
     f = 3
     k = 3
     s = (1, 64, 64, 3)
-    nx = np.random.rand(*s)
-    nx = nx.astype(np.float32)
+    nx = np.random.rand(*s).astype(np.float32)
 
     custom_layers = [
-        Conv(f, k),
+        FlatConv(f, k),
         DownSampleConv(f, k),
         ResBlock(f, k),
         UpSampleConv(f, k)
@@ -284,10 +283,11 @@ if __name__ == "__main__":
 
     for layer in custom_layers:
         tf.keras.backend.clear_session()
-        layer.build(s)
+        out = layer(nx)
         layer.summary()
-        print()
-        print()
+        print(f"Input  Shape: {nx.shape}")
+        print(f"Output Shape: {out.shape}")
+        print("\n" * 2)
 
     tf.keras.backend.clear_session()
     g = Generator()
@@ -296,8 +296,8 @@ if __name__ == "__main__":
     t = tf.keras.Input(shape=nx.shape[1:], batch_size=nx.shape[0])
     out = g(t)
     g.summary()
-    print(f"Input  shape: {nx.shape}")
-    print(f"Output shape: {out.shape}")
+    print(f"Input  Shape: {nx.shape}")
+    print(f"Output Shape: {out.shape}")
     assert out.shape == shape, "Output shape doesn't match input shape"
     print("Generator's output shape is exactly the same as shape of input.")
 
