@@ -36,12 +36,15 @@ class Trainer:
         data_dir,
         logdir,
         result_dir,
+        checkpoint_dir,
+        pretrain_checkpoint_prefix,
         pretrain_model_dir,
         model_dir,
         disable_sampling,
         ignore_vgg,
         pretrain_learning_rate,
         pretrain_epochs,
+        pretrain_saving_epochs,
         pretrain_reporting_steps,
         pretrain_generator_name,
         generator_name,
@@ -69,12 +72,15 @@ class Trainer:
         self.data_dir = data_dir
         self.logdir = logdir
         self.result_dir = result_dir
+        self.checkpoint_dir = checkpoint_dir
+        self.pretrain_checkpoint_prefix = pretrain_checkpoint_prefix
         self.pretrain_model_dir = pretrain_model_dir
         self.model_dir = model_dir
         self.disable_sampling = disable_sampling
         self.ignore_vgg = ignore_vgg
         self.pretrain_learning_rate = pretrain_learning_rate
         self.pretrain_epochs = pretrain_epochs
+        self.pretrain_saving_epochs = pretrain_saving_epochs
         self.pretrain_reporting_steps = pretrain_reporting_steps
         self.pretrain_generator_name = pretrain_generator_name
         self.generator_name = generator_name
@@ -168,10 +174,27 @@ class Trainer:
             batch_size=self.batch_size))
         generator.summary()
 
-        # TODO: checkpoint processing
-
         self.logger.info("Setting up optimizer to update generator's parameters...")
         optimizer = tf.keras.optimizers.Adam(learning_rate=self.pretrain_learning_rate)
+
+        self.logger.info(f"Try restoring checkpoints: "
+                         f"`{self.pretrain_checkpoint_prefix}` in `{self.checkpoint_dir}` dir...")
+        try:
+            pretrain_checkpoint_prefix = os.path.join(self.checkpoint_dir, self.pretrain_checkpoint_prefix)
+            checkpoint = tf.train.Checkpoint(generator=generator)
+            checkpoint.restore(tf.train.latest_checkpoint(self.checkpoint_dir)).assert_consumed()
+            self.logger.info(f"Previous checkpoints stored at has been restored.")
+            trained_epochs = checkpoint.save_counter.numpy()
+            epochs = self.pretrain_epochs - trained_epochs
+            if epochs <= 0:
+                self.logger.info(f"Already trained {trained_epochs} epochs, set a larger `pretrain_epochs`...")
+                return
+            else:
+                self.logger.info(f"Already trained {trained_epochs} epochs, {epochs} epochs left to be trained...")
+        except AssertionError:
+            self.logger.info(f"Checkpoint is not found, training from scratch with {self.pretrain_epochs} epochs...")
+            trained_epochs = 0
+            epochs = self.pretrain_epochs
 
         self.logger.info("Preparing seed images for monitoring model performance...")
         # TODO: use previous seed if available
@@ -191,9 +214,9 @@ class Trainer:
             self.logger.info("Proceed training without sampling images...")
 
         self.logger.info("Starting training loop...")
-        progress_bar = tqdm(list(range(self.pretrain_epochs)))
+        progress_bar = tqdm(list(range(epochs)))
         for epoch in progress_bar:
-            progress_bar.set_description(f"Epoch {epoch}")
+            progress_bar.set_description(f"Epoch {trained_epochs + epoch + 1}")
 
             for step, image_batch in enumerate(dataset):
                 self.pretrain_step(image_batch, generator, optimizer)
@@ -207,20 +230,13 @@ class Trainer:
                             image_name=f"generated_images_at_step_{step}.png",
                         )
 
-                    # TODO: save checkpoints
-                    # self.logger.info(f"Saving checkpoints for step {step}...")
-                    # g.save(sess, self.model_dir, self.pretrain_generator_name)
-                    # generator.save_weights(os.path.join(self.pretrain_model_dir, "generator.h5"))
-                    # self.logger.info(
-                    #     "[Step {}] batch_loss: {:.3f}, {} elapsed".format(
-                    #         step, batch_loss, datetime.utcnow() - start
-                    #     )
-                    # )
-
                     # TODO: tensorboard callback
                     # with open(os.path.join(self.result_dir, "batch_losses.tsv"), "a") as f:
                     #     f.write(f"{step}\t{batch_loss}\n")
 
+            if epoch % self.pretrain_saving_epochs == 0:
+                self.logger.info(f"Saving checkpoints after epoch {trained_epochs + epoch + 1} ended...")
+                checkpoint.save(file_prefix=pretrain_checkpoint_prefix)
 
 def main(**kwargs):
     t = Trainer(**kwargs)
@@ -265,13 +281,16 @@ if __name__ == "__main__":
     parser.add_argument("--ignore_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
     parser.add_argument("--pretrain_epochs", type=int, default=10)
+    parser.add_argument("--pretrain_saving_epochs", type=int, default=1)
     parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
     parser.add_argument("--data_dir", type=str, default="datasets")
     parser.add_argument("--logdir", type=str, default="runs")
     parser.add_argument("--result_dir", type=str, default="result")
-    parser.add_argument("--pretrain_model_dir", type=str, default="ckpts")
-    parser.add_argument("--model_dir", type=str, default="ckpts")
-    parser.add_argument("--disable_sampling", type=bool, default=False)
+    parser.add_argument("--checkpoint_dir", type=str, default="training_checkpoints")
+    parser.add_argument("--pretrain_checkpoint_prefix", type=str, default="pretrain_generator")
+    parser.add_argument("--pretrain_model_dir", type=str, default="models")
+    parser.add_argument("--model_dir", type=str, default="models")
+    parser.add_argument("--disable_sampling", action="store_true")
 
     parser.add_argument(
         "--pretrain_generator_name", type=str, default="pretrain_generator"
