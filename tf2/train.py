@@ -9,7 +9,6 @@ import numpy as np
 import matplotlib as mpl
 mpl.use("agg")
 import matplotlib.pyplot as plt
-from datetime import datetime
 
 
 class Trainer:
@@ -120,10 +119,10 @@ class Trainer:
 
     def get_dataset(self, dataset_name, domain, _type, batch_size):
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
+        num_images = len(files)
         self.logger.info(
-            f"Found {len(files)} domain{domain} images in {_type}{domain} folder."
+            f"Found {num_images} domain{domain} images in {_type}{domain} folder."
         )
-
         ds = tf.data.Dataset.from_tensor_slices(files)
 
         def image_processing(filename):
@@ -133,8 +132,31 @@ class Trainer:
             x = tf.image.resize_image_with_crop_or_pad(x, self.input_size, self.input_size)
             img = tf.cast(x, tf.float32) / 127.5 - 1
             return img
+        return ds.map(image_processing).shuffle(num_images).batch(batch_size)
 
-        return ds.map(image_processing).shuffle(6000).repeat().batch(batch_size)
+    def get_sample_images(self, dataset):
+        sample_image_dir = os.path.join(self.result_dir, "sample_batches")
+        if not os.path.exists(sample_image_dir):
+            os.makedirs(sample_image_dir)
+        batch_files = sorted(glob(os.path.join(sample_image_dir, "sample_batch_*.npy")))
+        if not batch_files:
+            self.logger.debug("No existing sample images, generating images from dataset...")
+            real_batches = list()
+            for image_batch in dataset.take(self.sample_size // self.batch_size):
+                real_batches.append(image_batch)
+
+            for i, batch in enumerate(real_batches):
+                np.save(os.path.join(sample_image_dir, f"sample_batch_{i}.npy"), batch.numpy())
+
+            self._save_generated_images(
+                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
+                image_name="sample_images.png",
+            )
+        else:
+            self.logger.debug("Existing sample images found, load them directly.")
+            real_batches = [np.load(f) for f in batch_files]
+
+        return real_batches
 
     @tf.function
     def content_loss(self, input_images, generated_images):
@@ -187,7 +209,7 @@ class Trainer:
             trained_epochs = checkpoint.save_counter.numpy()
             epochs = self.pretrain_epochs - trained_epochs
             if epochs <= 0:
-                self.logger.info(f"Already trained {trained_epochs} epochs, set a larger `pretrain_epochs`...")
+                self.logger.info(f"Already trained {trained_epochs} epochs. Set a larger `pretrain_epochs`...")
                 return
             else:
                 self.logger.info(f"Already trained {trained_epochs} epochs, {epochs} epochs left to be trained...")
@@ -196,27 +218,18 @@ class Trainer:
             trained_epochs = 0
             epochs = self.pretrain_epochs
 
-        self.logger.info("Preparing seed images for monitoring model performance...")
         # TODO: use previous seed if available
         if not self.disable_sampling:
-            self.logger.info(
-                f"Sampling {self.sample_size} images for tracking generator's performance..."
-            )
-            real_batches = list()
-            for image_batch in dataset.take(self.sample_size // self.batch_size):
-                real_batches.append(image_batch)
-
-            self._save_generated_images(
-                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
-                image_name="sample_images.png",
-            )
+            self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
+            real_batches = self.get_sample_images(dataset)
         else:
             self.logger.info("Proceed training without sampling images...")
 
         self.logger.info("Starting training loop...")
         progress_bar = tqdm(list(range(epochs)))
         for epoch in progress_bar:
-            progress_bar.set_description(f"Epoch {trained_epochs + epoch + 1}")
+            epoch_idx = trained_epochs + epoch + 1
+            progress_bar.set_description(f"Epoch {epoch_idx}")
 
             for step, image_batch in enumerate(dataset):
                 self.pretrain_step(image_batch, generator, optimizer)
@@ -227,7 +240,7 @@ class Trainer:
                         fake_batches = [generator(real_b) for real_b in real_batches]
                         self._save_generated_images(
                             (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
-                            image_name=f"generated_images_at_step_{step}.png",
+                            image_name=f"generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
 
                     # TODO: tensorboard callback
@@ -235,8 +248,9 @@ class Trainer:
                     #     f.write(f"{step}\t{batch_loss}\n")
 
             if epoch % self.pretrain_saving_epochs == 0:
-                self.logger.info(f"Saving checkpoints after epoch {trained_epochs + epoch + 1} ended...")
+                self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
                 checkpoint.save(file_prefix=pretrain_checkpoint_prefix)
+
 
 def main(**kwargs):
     t = Trainer(**kwargs)
