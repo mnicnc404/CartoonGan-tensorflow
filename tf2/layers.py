@@ -174,11 +174,12 @@ class UpSampleConv(Model):
         self.kernel_size = kernel_size
         self.norm_type = norm_type
 
-        self.deconv1 = Conv2DTranspose(self.filters,
-                                       self.kernel_size,
-                                       strides=2)
-        self.deconv2 = Conv2DTranspose(self.filters,
-                                       self.kernel_size)
+        self.deconv1 = Conv2D(self.filters,
+                              self.kernel_size,
+                              padding="same")
+        self.deconv2 = Conv2D(self.filters,
+                              self.kernel_size,
+                              padding="same")
 
         if self.norm_type == "instance":
             self.norm = InstanceNormalization()
