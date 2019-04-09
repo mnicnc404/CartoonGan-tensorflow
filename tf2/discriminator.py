@@ -46,14 +46,14 @@ class Discriminator(Model):
     def build(self, input_shape):
         super(Discriminator, self).build(input_shape)
 
-    def call(self, x):
+    def call(self, x, training=False):
         x = self.flat_pad(x)
         x = self.flat_conv(x)
         x = self.flat_lru(x)
-        x = self.strided_conv1(x)
-        x = self.strided_conv2(x)
+        x = self.strided_conv1(x, training=training)
+        x = self.strided_conv2(x, training=training)
         x = self.conv2(x)
-        x = self.norm(x)
+        x = self.norm(x, training=training)
         x = self.lrelu(x)
         x = self.final_conv(x)
         return x

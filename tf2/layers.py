@@ -243,12 +243,12 @@ class StridedConv(Model):
     def build(self, input_shape):
         super(StridedConv, self).build(input_shape)
 
-    def call(self, x):
+    def call(self, x, training=False):
         x = self.pad1(x)
         x = self.conv1(x)
         x = self.lrelu1(x)
         x = self.pad2(x)
         x = self.conv2(x)
-        x = self.norm(x)
+        x = self.norm(x, training=training)
         x = self.lrelu2(x)
         return x
