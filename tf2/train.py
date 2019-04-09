@@ -435,6 +435,7 @@ class Trainer:
             progress_bar.set_description(f"Epoch {epoch_idx}")
 
             for step, source_images in enumerate(ds_source):
+                self.logger.debug(f"step {step}")
                 for images in ds_target.take(1):
                     target_images = images
                 for images in ds_smooth.take(1):
@@ -443,7 +444,7 @@ class Trainer:
                 self.train_step(source_images, target_images, smooth_images,
                                 g, d, g_optimizer, d_optimizer)
 
-                if step % self.reporting_steps == 0:
+                if step and step % self.reporting_steps == 0:
 
                     if not self.disable_sampling:
                         fake_batches = [g(real_b) for real_b in real_batches]
@@ -453,15 +454,19 @@ class Trainer:
                         )
 
                     with summary_writer.as_default():
-
                         for metric, name in self.metric_and_names:
                             tf.summary.scalar(name, metric.result(), step=epoch_idx * step)
                             metric.reset_states()
 
-            if epoch % self.saving_epochs == 0:
-                self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
-                g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
-                d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
+                # FIXME: temporary solution for running on colab
+                if step and step % (self.reporting_steps * 2) == 0:
+                    g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
+                    d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
+
+            # if epoch % self.saving_epochs == 0:
+            #     self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
+            #     g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
+            #     d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
 
 
 def main(**kwargs):
