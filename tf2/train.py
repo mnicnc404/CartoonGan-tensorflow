@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib as mpl
 mpl.use("agg")
 import matplotlib.pyplot as plt
+# TODO: adversarial training code
 
 
 class Trainer:
@@ -33,7 +34,7 @@ class Trainer:
         discriminator_lr,
         logger_name,
         data_dir,
-        logdir,
+        log_dir,
         result_dir,
         checkpoint_dir,
         pretrain_checkpoint_prefix,
@@ -69,7 +70,7 @@ class Trainer:
         self.generator_lr = generator_lr
         self.discriminator_lr = discriminator_lr
         self.data_dir = data_dir
-        self.logdir = logdir
+        self.log_dir = log_dir
         self.result_dir = result_dir
         self.checkpoint_dir = checkpoint_dir
         self.pretrain_checkpoint_prefix = pretrain_checkpoint_prefix
@@ -96,9 +97,11 @@ class Trainer:
             logger.info("VGG19 will not be used. Content loss will simply imply pixel-wise difference.")
             self.vgg = None
 
-    def _save_generated_images(
-        self, batch_x, image_name=None, num_images_per_row=8
-    ):
+        logger.info("Setting up objective functions and metrics...")
+        self.content_loss_object = tf.keras.losses.MeanAbsoluteError()
+        self.content_loss_metric = tf.keras.metrics.Mean("content_loss", dtype=tf.float32)
+
+    def _save_generated_images(self, batch_x, image_name=None, num_images_per_row=8):
         batch_size = batch_x.shape[0]
         num_rows = (
             batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
@@ -160,7 +163,6 @@ class Trainer:
 
     @tf.function
     def content_loss(self, input_images, generated_images):
-        loss = tf.keras.losses.MeanAbsoluteError()
         if self.vgg:
             input_content = self.vgg(input_images)
             generated_content = self.vgg(generated_images)
@@ -168,19 +170,22 @@ class Trainer:
             input_content = input_images
             generated_content = generated_images
 
-        return self.content_lambda * loss(input_content, generated_content)
+        return self.content_lambda * self.content_loss_object(input_content, generated_content)
 
     @tf.function
     def pretrain_step(self, input_images, generator, optimizer):
 
         with tf.GradientTape() as tape:
-            generated_images = generator(input_images)
+            generated_images = generator(input_images, training=True)
             c_loss = self.content_loss(input_images, generated_images)
 
         gradients = tape.gradient(c_loss, generator.trainable_variables)
         optimizer.apply_gradients(zip(gradients, generator.trainable_variables))
 
+        self.content_loss_metric(c_loss)
+
     def pretrain_generator(self):
+        self.logger.info(f"Starting to pretrain generator with {self.pretrain_epochs} epochs...")
         self.logger.info(
             f"Building `{self.dataset_name}` dataset with domain `{self.source_domain}`..."
         )
@@ -199,13 +204,15 @@ class Trainer:
         self.logger.info("Setting up optimizer to update generator's parameters...")
         optimizer = tf.keras.optimizers.Adam(learning_rate=self.pretrain_learning_rate)
 
-        self.logger.info(f"Try restoring checkpoints: "
+        self.logger.info(f"Try restoring checkpoint: "
                          f"`{self.pretrain_checkpoint_prefix}` in `{self.checkpoint_dir}` dir...")
         try:
-            pretrain_checkpoint_prefix = os.path.join(self.checkpoint_dir, self.pretrain_checkpoint_prefix)
+            pretrain_checkpoint_prefix = os.path.join(
+                self.checkpoint_dir, self.pretrain_checkpoint_prefix)
             checkpoint = tf.train.Checkpoint(generator=generator)
-            checkpoint.restore(tf.train.latest_checkpoint(self.checkpoint_dir)).assert_consumed()
-            self.logger.info(f"Previous checkpoints stored at has been restored.")
+            checkpoint.restore(
+                tf.train.latest_checkpoint(self.checkpoint_dir)).assert_consumed()
+            self.logger.info(f"Previous checkpoints has been restored.")
             trained_epochs = checkpoint.save_counter.numpy()
             epochs = self.pretrain_epochs - trained_epochs
             if epochs <= 0:
@@ -218,15 +225,15 @@ class Trainer:
             trained_epochs = 0
             epochs = self.pretrain_epochs
 
-        # TODO: use previous seed if available
         if not self.disable_sampling:
             self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
             real_batches = self.get_sample_images(dataset)
         else:
             self.logger.info("Proceed training without sampling images...")
 
-        self.logger.info("Starting training loop...")
+        self.logger.info("Starting training loop, setting up summary writer to record progress on TensorBoard...")
         progress_bar = tqdm(list(range(epochs)))
+        summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
         for epoch in progress_bar:
             epoch_idx = trained_epochs + epoch + 1
             progress_bar.set_description(f"Epoch {epoch_idx}")
@@ -243,13 +250,18 @@ class Trainer:
                             image_name=f"generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
 
-                    # TODO: tensorboard callback
-                    # with open(os.path.join(self.result_dir, "batch_losses.tsv"), "a") as f:
-                    #     f.write(f"{step}\t{batch_loss}\n")
+                    with summary_writer.as_default():
+                        tf.summary.scalar('content_loss',
+                                          self.content_loss_metric.result(),
+                                          step=epoch_idx * step)
+                    self.content_loss_metric.reset_states()
 
             if epoch % self.pretrain_saving_epochs == 0:
                 self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
                 checkpoint.save(file_prefix=pretrain_checkpoint_prefix)
+
+    def train_gan(self):
+        pass
 
 
 def main(**kwargs):
@@ -296,16 +308,16 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
     parser.add_argument("--pretrain_epochs", type=int, default=10)
     parser.add_argument("--pretrain_saving_epochs", type=int, default=1)
-    parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
+    parser.add_argument("--pretrain_reporting_steps", type=int, default=50)
     parser.add_argument("--data_dir", type=str, default="datasets")
-    parser.add_argument("--logdir", type=str, default="runs")
+    parser.add_argument("--log_dir", type=str, default="runs")
     parser.add_argument("--result_dir", type=str, default="result")
     parser.add_argument("--checkpoint_dir", type=str, default="training_checkpoints")
     parser.add_argument("--pretrain_checkpoint_prefix", type=str, default="pretrain_generator")
     parser.add_argument("--pretrain_model_dir", type=str, default="models")
     parser.add_argument("--model_dir", type=str, default="models")
     parser.add_argument("--disable_sampling", action="store_true")
-
+    # TODO: rearrange the order of options
     parser.add_argument(
         "--pretrain_generator_name", type=str, default="pretrain_generator"
     )
