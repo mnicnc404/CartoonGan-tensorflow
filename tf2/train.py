@@ -20,7 +20,6 @@ class Trainer:
         target_domain,
         gan_type,
         epochs,
-        saving_epochs,
         input_size,
         batch_size,
         sample_size,
@@ -58,7 +57,6 @@ class Trainer:
         self.target_domain = target_domain
         self.gan_type = gan_type
         self.epochs = epochs
-        self.saving_epochs = saving_epochs
         self.input_size = input_size
         self.batch_size = batch_size
         self.sample_size = sample_size
@@ -132,10 +130,14 @@ class Trainer:
         logger.info("Setting up checkpoint paths...")
         self.pretrain_checkpoint_prefix = os.path.join(
             self.checkpoint_dir, "pretrain", self.pretrain_checkpoint_prefix)
-        self.generator_checkpoint_prefix = os.path.join(
+        self.generator_checkpoint_dir = os.path.join(
             self.checkpoint_dir, self.generator_checkpoint_prefix)
-        self.discriminator_checkpoint_prefix = os.path.join(
+        self.generator_checkpoint_prefix = os.path.join(
+            self.generator_checkpoint_dir, self.generator_checkpoint_prefix)
+        self.discriminator_checkpoint_dir = os.path.join(
             self.checkpoint_dir, self.discriminator_checkpoint_prefix)
+        self.discriminator_checkpoint_prefix = os.path.join(
+            self.discriminator_checkpoint_dir, self.discriminator_checkpoint_prefix)
 
     def _save_generated_images(self, batch_x, image_name=None, num_images_per_row=8):
         batch_size = batch_x.shape[0]
@@ -155,6 +157,10 @@ class Trainer:
                 os.makedirs(directory)
             plt.savefig(os.path.join(directory, image_name))
         plt.close(fig)
+
+    def get_num_images(self, dataset_name, domain, _type):
+        files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
+        return len(files)
 
     def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
@@ -362,6 +368,9 @@ class Trainer:
                                      batch_size=self.batch_size,
                                      repeat=True)
 
+        self.logger.info("Setting up optimizer to update generator and discriminator...")
+        g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr)
+        d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         g = Generator()
@@ -372,9 +381,9 @@ class Trainer:
 
         self.logger.info(f"Searching existing checkpoints: `{self.generator_checkpoint_prefix}`...")
         try:
-            g_checkpoint = tf.train.Checkpoint(generator=g)
+            g_checkpoint = tf.train.Checkpoint(g=g, g_optimizer=g_optimizer)
             g_checkpoint.restore(
-                tf.train.latest_checkpoint(self.checkpoint_dir)).assert_consumed()
+                tf.train.latest_checkpoint(self.generator_checkpoint_dir)).assert_existing_objects_matched()
             self.logger.info(f"Previous checkpoints has been restored.")
             trained_epochs = g_checkpoint.save_counter.numpy()
             epochs = self.pretrain_epochs - trained_epochs
@@ -388,16 +397,14 @@ class Trainer:
                 "Previous checkpoints are not found, trying to load checkpoints from pretraining..."
             )
             try:
-                status = g_checkpoint.restore(tf.train.latest_checkpoint(
-                    os.path.join(self.checkpoint_dir, "pretrain")))
-                status.assert_consumed()
+                g_checkpoint.restore(tf.train.latest_checkpoint(
+                    os.path.join(self.checkpoint_dir, "pretrain"))).assert_existing_objects_matched()
                 self.logger.info(f"Successfully loaded `{self.pretrain_checkpoint_prefix}`...")
             except AssertionError:
-                self.logger.info(
-                    f"`{self.pretrain_checkpoint_prefix}` not found, training from scratch...")
+                self.logger.info("specified checkpoint is not found, training from scratch...")
 
             trained_epochs = 0
-            epochs = self.pretrain_epochs
+            epochs = self.epochs
 
         self.logger.info(f"Initializing discriminator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
@@ -409,17 +416,12 @@ class Trainer:
 
         self.logger.info(f"Searching existing checkpoints: `{self.discriminator_checkpoint_prefix}`...")
         try:
-            d_checkpoint = tf.train.Checkpoint(discriminator=d)
+            d_checkpoint = tf.train.Checkpoint(d=d, d_optimizer=d_optimizer)
             d_checkpoint.restore(
-                tf.train.latest_checkpoint(self.checkpoint_dir)).assert_consumed()
+                tf.train.latest_checkpoint(self.discriminator_checkpoint_dir)).assert_existing_objects_matched()
             self.logger.info(f"Previous checkpoints has been restored.")
         except AssertionError:
-            self.logger.info(
-                f"`{self.discriminator_checkpoint_prefix}` not found, training from scratch...")
-
-        self.logger.info("Setting up optimizer to update generator and discriminator...")
-        g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr)
-        d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr)
+            self.logger.info("specified checkpoint is not found, training from scratch...")
 
         if not self.disable_sampling:
             self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
@@ -427,15 +429,21 @@ class Trainer:
         else:
             self.logger.info("Proceeding training without sample images...")
 
-        self.logger.info("Starting training loop, setting up summary writer to record progress on TensorBoard...")
+        self.logger.info("Setting up summary writer to record progress on TensorBoard...")
         progress_bar = tqdm(list(range(epochs)))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
+
+        self.logger.info("Starting training loop...")
+        num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
+        num_steps_per_epoch = (num_images // self.batch_size) + 1
+
+        self.logger.info(f"Number of trained epochs: {trained_epochs}, epochs to be trained: {epochs}, "
+                         f"batch size: {self.batch_size}")
         for epoch in progress_bar:
             epoch_idx = trained_epochs + epoch + 1
             progress_bar.set_description(f"Epoch {epoch_idx}")
 
-            for step, source_images in enumerate(ds_source):
-                self.logger.debug(f"step {step}")
+            for step, source_images in enumerate(ds_source, 1):
                 for images in ds_target.take(1):
                     target_images = images
                 for images in ds_smooth.take(1):
@@ -444,7 +452,7 @@ class Trainer:
                 self.train_step(source_images, target_images, smooth_images,
                                 g, d, g_optimizer, d_optimizer)
 
-                if step and step % self.reporting_steps == 0:
+                if step % self.reporting_steps == 0:
 
                     if not self.disable_sampling:
                         fake_batches = [g(real_b) for real_b in real_batches]
@@ -453,20 +461,18 @@ class Trainer:
                             image_name=f"generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
 
+                    global_step = (epoch_idx - 1) * num_steps_per_epoch + step
                     with summary_writer.as_default():
                         for metric, name in self.metric_and_names:
-                            tf.summary.scalar(name, metric.result(), step=epoch_idx * step)
+                            tf.summary.scalar(name, metric.result(), step=global_step)
                             metric.reset_states()
 
-                # FIXME: temporary solution for running on colab
-                if step and step % (self.reporting_steps * 2) == 0:
-                    g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
-                    d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
+                    logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
+                                 f"{global_step * self.batch_size} images processed.")
 
-            # if epoch % self.saving_epochs == 0:
-            #     self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
-            #     g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
-            #     d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
+            self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
+            g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
+            d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
 
 
 def main(**kwargs):
@@ -497,8 +503,7 @@ if __name__ == "__main__":
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--gan_type", type=str, default="lsgan", choices=["gan", "lsgan"])
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--saving_epochs", type=int, default=1)
-    parser.add_argument("--reporting_steps", type=int, default=100)
+    parser.add_argument("--reporting_steps", type=int, default=10)
     parser.add_argument("--content_lambda", type=float, default=10)
     parser.add_argument("--style_lambda", type=float, default=1.)
     parser.add_argument("--g_adv_lambda", type=float, default=1)
