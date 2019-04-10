@@ -396,12 +396,14 @@ class Trainer:
             self.logger.info(
                 "Previous checkpoints are not found, trying to load checkpoints from pretraining..."
             )
+
             try:
+                g_checkpoint = tf.train.Checkpoint(generator=g)
                 g_checkpoint.restore(tf.train.latest_checkpoint(
                     os.path.join(self.checkpoint_dir, "pretrain"))).assert_existing_objects_matched()
                 self.logger.info(f"Successfully loaded `{self.pretrain_checkpoint_prefix}`...")
             except AssertionError:
-                self.logger.info("specified checkpoint is not found, training from scratch...")
+                self.logger.info("specified pretrained checkpoint is not found, training from scratch...")
 
             trained_epochs = 0
             epochs = self.epochs
