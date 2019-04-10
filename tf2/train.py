@@ -430,7 +430,6 @@ class Trainer:
             real_batches = self.get_sample_images(ds_source)
         else:
             self.logger.info("Proceeding training without sample images...")
-        return
         self.logger.info("Setting up summary writer to record progress on TensorBoard...")
         progress_bar = tqdm(list(range(epochs)))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
