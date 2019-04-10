@@ -139,7 +139,7 @@ class Trainer:
         self.discriminator_checkpoint_prefix = os.path.join(
             self.discriminator_checkpoint_dir, self.discriminator_checkpoint_prefix)
 
-    def _save_generated_images(self, batch_x, image_name=None, num_images_per_row=8):
+    def _save_generated_images(self, batch_x, image_name=None, num_images_per_row=6):
         batch_size = batch_x.shape[0]
         num_rows = (
             batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
@@ -430,7 +430,7 @@ class Trainer:
             real_batches = self.get_sample_images(ds_source)
         else:
             self.logger.info("Proceeding training without sample images...")
-
+        return
         self.logger.info("Setting up summary writer to record progress on TensorBoard...")
         progress_bar = tqdm(list(range(epochs)))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
@@ -502,7 +502,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--sample_size", type=int, default=32)
+    parser.add_argument("--sample_size", type=int, default=24)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--gan_type", type=str, default="lsgan", choices=["gan", "lsgan"])
