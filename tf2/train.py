@@ -383,7 +383,7 @@ class Trainer:
         try:
             g_checkpoint = tf.train.Checkpoint(g=g, g_optimizer=g_optimizer)
             g_checkpoint.restore(
-                tf.train.latest_checkpoint(self.generator_checkpoint_dir))
+                tf.train.latest_checkpoint(self.generator_checkpoint_dir)).assert_existing_objects_matched()
             self.logger.info(f"Previous checkpoints has been restored.")
             trained_epochs = g_checkpoint.save_counter.numpy()
             epochs = self.epochs - trained_epochs
