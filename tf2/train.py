@@ -476,6 +476,8 @@ class Trainer:
             g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
             d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
 
+            g.save_weights(os.path.join(self.model_dir, "generator"))
+
 
 def main(**kwargs):
     t = Trainer(**kwargs)
