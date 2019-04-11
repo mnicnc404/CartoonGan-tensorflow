@@ -258,9 +258,9 @@ class Trainer:
             g_adv_loss = self.g_adv_lambda * self.generator_adversarial_loss(fake_output)
             g_total_loss = c_loss + g_adv_loss
 
-        g_grads = g_tape.gradient(g_total_loss, generator.trainable_variables)
         d_grads = d_tape.gradient(d_total_loss, discriminator.trainable_variables)
-
+        g_grads = g_tape.gradient(g_total_loss, generator.trainable_variables)
+        
         g_optimizer.apply_gradients(zip(g_grads, generator.trainable_variables))
         d_optimizer.apply_gradients(zip(d_grads, discriminator.trainable_variables))
 
