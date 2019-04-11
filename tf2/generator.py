@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import Conv2D, Activation
 from layers import ReflectionPadding2D, FlatConv, DownSampleConv,\
     ResBlock, UpSampleConv
 
@@ -46,6 +46,7 @@ class Generator(Model):
             self.final_pad = ZeroPadding2D(3)
 
         self.final_conv = Conv2D(3, 7)
+        self.final_act = Activation("tanh")
 
     def build(self, input_shape):
         super(Generator, self).build(input_shape)
@@ -60,10 +61,11 @@ class Generator(Model):
         x = self.up_conv2(x)
         x = self.final_pad(x)
         x = self.final_conv(x)
+        x = self.final_act(x)
         return x
 
     def compute_output_shape(self, input_shape):
-        return input_shape
+        return tf.TensorShape(input_shape)
 
 
 if __name__ == "__main__":
