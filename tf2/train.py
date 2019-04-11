@@ -260,7 +260,7 @@ class Trainer:
 
         d_grads = d_tape.gradient(d_total_loss, discriminator.trainable_variables)
         g_grads = g_tape.gradient(g_total_loss, generator.trainable_variables)
-        
+
         g_optimizer.apply_gradients(zip(g_grads, generator.trainable_variables))
         d_optimizer.apply_gradients(zip(d_grads, discriminator.trainable_variables))
 
@@ -321,11 +321,15 @@ class Trainer:
         self.logger.info("Starting training loop, setting up summary writer to record progress on TensorBoard...")
         progress_bar = tqdm(list(range(epochs)))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
+
+        num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
+        num_steps_per_epoch = (num_images // self.batch_size) + 1
+
         for epoch in progress_bar:
             epoch_idx = trained_epochs + epoch + 1
             progress_bar.set_description(f"Epoch {epoch_idx}")
 
-            for step, image_batch in enumerate(dataset):
+            for step, image_batch in enumerate(dataset, 1):
                 self.pretrain_step(image_batch, generator, optimizer)
 
                 if step % self.pretrain_reporting_steps == 0:
@@ -337,10 +341,11 @@ class Trainer:
                             image_name=f"pretrain_generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
 
+                    global_step = (epoch_idx - 1) * num_steps_per_epoch + step
                     with summary_writer.as_default():
                         tf.summary.scalar('content_loss',
                                           self.content_loss_metric.result(),
-                                          step=epoch_idx * step)
+                                          step=global_step)
                     self.content_loss_metric.reset_states()
 
             if epoch % self.pretrain_saving_epochs == 0:
