@@ -281,7 +281,7 @@ def convert_gif_to_mp4(gif_path, crf=25):
         os.makedirs(mp4_dir)
     mp4_path = os.path.join(mp4_dir, gif_file.replace(".gif", ".mp4"))
     cmd = "ffmpeg -y -i {} -movflags faststart -pix_fmt yuv420p -vf \"scale=trunc(iw/2)*2:trunc(ih/2)*2\" -crf {} {}"
-    cmd = cmd.replace("My Drive", "'My Drive'")
+    cmd = cmd.replace("My Drive", "My\ Drive")
     os.system(cmd.format(gif_path, crf, mp4_path))
 
 
