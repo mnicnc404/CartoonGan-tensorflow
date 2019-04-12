@@ -47,7 +47,7 @@ parser.add_argument("--skip_comparison", action="store_true",
 parser.add_argument("-v", "--comparison_view", type=str, default="smart",
                     choices=["smart", "horizontal", "vertical", "grid"],
                     help="specify how input images and transformed images are concatenated for easier comparison")
-parser.add_argument("-f", "--gif_frame_frequency", type=int, default=2,
+parser.add_argument("-f", "--gif_frame_frequency", type=int, default=1,
                     help="how often should a frame in gif be transformed. freq=1 means that every frame "
                          "in the gif will be transformed by default. set higher frequency can save processing "
                          "time while make the transformed gif less smooth")
@@ -60,6 +60,9 @@ parser.add_argument("-k", "--kee_original_size", action="store_true",
 parser.add_argument("--max_resized_height", type=int, default=300,
                     help="specify the max height of a image after resizing. the resized image will have the same"
                          "aspect ratio. Set higher value or enable `kee_original_size` if you want larger image.")
+parser.add_argument("--convert_gif_to_mp4", action="store_true",
+                    help="convert transformed gif to mp4 which is much more smaller and easier to share. "
+                         "`ffmpeg` need to be installed at first.")
 parser.add_argument("--logging_lvl", type=str, default="info",
                     choices=["debug", "info", "warning", "error", "critical"],
                     help="logging level which decide how verbosely the program will be. set to `debug` if necessary")
@@ -266,6 +269,18 @@ def save_png_images_as_gif(image_paths, image_filename, style="comparison"):
         for i, filename in enumerate(file_names):
             image = imageio.imread(filename)
             writer.append_data(image)
+    return gif_path
+
+
+def convert_gif_to_mp4(gif_path, crf=25):
+
+    mp4_dir = os.path.join(os.path.dirname(gif_path), "mp4")
+    gif_file = gif_path.split("/")[-1]
+    if not os.path.exists(mp4_dir):
+        os.makedirs(mp4_dir)
+    mp4_path = os.path.join(mp4_dir, gif_file.replace(".gif", ".mp4"))
+    cmd = "ffmpeg -y -i {} -movflags faststart -pix_fmt yuv420p -vf \"scale=trunc(iw/2)*2:trunc(ih/2)*2\" -crf {} {}"
+    os.system(cmd.format(gif_path, crf, mp4_path))
 
 
 def result_exist(image_path, style):
@@ -323,7 +338,9 @@ def main():
                 png_paths_list.append(transformed_png_paths)
 
                 if not return_existing_result:
-                    save_png_images_as_gif(transformed_png_paths, image_filename, style)
+                    gif_path = save_png_images_as_gif(transformed_png_paths, image_filename, style)
+                    if args.convert_gif_to_mp4:
+                        convert_gif_to_mp4(gif_path)
 
             rearrange_paths_list = [[l[i] for l in png_paths_list] for i in range(num_images)]
 
@@ -335,7 +352,10 @@ def main():
                 combined_image_paths.append(path)
 
             if not args.skip_comparison:
-                save_png_images_as_gif(combined_image_paths, image_filename)
+                gif_path = save_png_images_as_gif(combined_image_paths, image_filename)
+                if args.convert_gif_to_mp4:
+                    convert_gif_to_mp4(gif_path)
+
 
         else:
             related_image_paths = [image_path]
@@ -383,9 +403,6 @@ if __name__ == "__main__":
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
     main()
-
-
-
 
 
 
