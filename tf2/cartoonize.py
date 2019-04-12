@@ -8,14 +8,14 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime
-from style_transfer.cartoongan import cartoongan
 from style_transfer.comixgan import comixgan
+from style_transfer.cartoongan import cartoongan
 
 
 CARTOONGAN_STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
 COMIXGAN_STYLES = ["comic", "comic2"]
 STYLES = CARTOONGAN_STYLES + COMIXGAN_STYLES
-VALID_EXTENSIONS = ['jpg', 'png', 'gif']
+VALID_EXTENSIONS = ['jpg', 'png', 'gif', 'JPG']
 
 # TODO: mp4 processing
 # TODO: add self-trained cartoongan: MODE
@@ -24,7 +24,7 @@ VALID_EXTENSIONS = ['jpg', 'png', 'gif']
 # TODO: adjust options' order
 # TODO: fix screwy gif
 # TODO: gif categories: [idol, movie(marvel, titanic), meme, animals(cat, dog), sports(basketball), natural]
-
+# TODO: auto-adjust batch-size
 
 parser = argparse.ArgumentParser(description="transform real world images to specified cartoon style(s)")
 parser.add_argument("-s", "--styles", nargs="+", default=[STYLES[0]],
@@ -44,16 +44,22 @@ parser.add_argument("--overwrite", action="store_true",
                     help="enable this if you want to regenerate outputs regardless of existing results")
 parser.add_argument("--skip_comparison", action="store_true",
                     help="enable this if you only want individual style result and to save processing time")
-parser.add_argument("-v", "--comparison_view", type=str, default="horizontal",
-                    choices=["horizontal", "vertical", "grid"],
+parser.add_argument("-v", "--comparison_view", type=str, default="smart",
+                    choices=["smart", "horizontal", "vertical", "grid"],
                     help="specify how input images and transformed images are concatenated for easier comparison")
 parser.add_argument("-f", "--gif_frame_frequency", type=int, default=2,
-                    help="how often should a frame in gif be cartoonized. freq=1 means that every frame "
-                         "in the gif will be cartoonized by default. set higher frequency can save processing "
-                         "time while make the cartoonized gif less smooth")
+                    help="how often should a frame in gif be transformed. freq=1 means that every frame "
+                         "in the gif will be transformed by default. set higher frequency can save processing "
+                         "time while make the transformed gif less smooth")
 parser.add_argument("-n", "--max_num_frames", type=int, default=100,
                     help="max number of frames that will be extracted from a gif. set higher value if longer gif "
                          "is needed")
+parser.add_argument("-k", "--kee_original_size", action="store_true",
+                    help="by default the input images will be resized to reasonable size to prevent potential large "
+                         "computation and to save file sizes. Enable this if you want the original image size.")
+parser.add_argument("--max_resized_height", type=int, default=300,
+                    help="specify the max height of a image after resizing. the resized image will have the same"
+                         "aspect ratio. Set higher value or enable `kee_original_size` if you want larger image.")
 parser.add_argument("--logging_lvl", type=str, default="info",
                     choices=["debug", "info", "warning", "error", "critical"],
                     help="logging level which decide how verbosely the program will be. set to `debug` if necessary")
@@ -61,7 +67,6 @@ parser.add_argument("--debug", action="store_true",
                     help="show the most detailed logging messages for debugging purpose")
 parser.add_argument("--show_tf_cpp_log", action="store_true")
 
-# TODO: limit image size
 # TODO: processing mp4 possible? how about converting to mp4?
 
 args = parser.parse_args()
@@ -71,6 +76,16 @@ TEMPORARY_DIR = f"{args.output_dir}/.tmp"
 
 def pre_processing(image_path, style, expand_dim=True):
     input_image = PIL.Image.open(image_path).convert("RGB")
+
+    if not args.kee_original_size:
+        width, height = input_image.size
+        aspect_ratio = width / height
+        resized_height = min(height, args.max_resized_height)
+        resized_width = int(resized_height * aspect_ratio)
+        if width != resized_width:
+            logger.debug(f"resized ({width}, {height}) to: ({resized_width}, {resized_height})")
+            input_image = input_image.resize((resized_width, resized_height))
+
     input_image = np.asarray(input_image)
     input_image = input_image.astype(np.float32)
 
@@ -115,24 +130,37 @@ def save_transformed_image(output_image, img_filename, save_dir):
     return transformed_image_path
 
 
-def save_concatenated_image(image_paths, image_folder="comparison"):
+def save_concatenated_image(image_paths, image_folder="comparison", num_columns=2):
     # TODO: add style as title, refer Comixify (as a option: add_style_name)
     images = [PIL.Image.open(i).convert('RGB') for i in image_paths]
     # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
     min_shape = sorted([(np.sum(i.size), i.size) for i in images])[0][1]
-    array = [np.asarray(i.resize(min_shape)) for i in images]
+    array = np.asarray([np.asarray(i.resize(min_shape)) for i in images])
 
-    if args.comparison_view == "horizontal":
-        images_comb = np.hstack(array)
-    elif args.comparison_view == "grid":
-        if len(args.styles) + 1 == 4:
-            first_row = np.hstack(array[:2])
-            second_row = np.hstack(array[2:])
-            images_comb = np.vstack([first_row, second_row])
+    view = args.comparison_view
+    if view == "smart":
+        width, height = min_shape[0], min_shape[1]
+        aspect_ratio = width / height
+        logger.debug(f"(width, height): ({width}, {height}), aspect_ratio: {aspect_ratio}")
+        grid_suitable = (len(args.styles) + 1) % num_columns == 0
+        is_portrait = aspect_ratio <= 0.75
+        if grid_suitable and not is_portrait:
+            view = "grid"
+        elif is_portrait:
+            view = "horizontal"
         else:
-            images_comb = np.hstack(array)
-    else:
+            view = "vertical"
+
+    if view == "horizontal":
+        images_comb = np.hstack(array)
+    elif view == "vertical":
         images_comb = np.vstack(array)
+    elif view == "grid":
+        rows = np.split(array, num_columns)
+        rows = [np.hstack(row) for row in rows]
+        images_comb = np.vstack([row for row in rows])
+    else:
+        logger.debug(f"Wrong `comparison_view`: {args.comparison_view}")
 
     images_comb = PIL.Image.fromarray(images_comb)
     file_name = image_paths[0].split("/")[-1]
@@ -170,8 +198,17 @@ def convert_gif_to_png(gif_path):
         while num_processed_frames < args.max_num_frames:
 
             image.putpalette(palette)
-            extracted_image = PIL.Image.new("RGBA", image.size)
+            extracted_image = PIL.Image.new("RGB", image.size)
             extracted_image.paste(image)
+
+            if not args.kee_original_size:
+                width, height = extracted_image.size
+                aspect_ratio = width / height
+                resized_height = min(height, args.max_resized_height)
+                resized_width = int(resized_height * aspect_ratio)
+                if width != resized_width:
+                    logger.debug(f"resized ({width}, {height}) to: ({resized_width}, {resized_height})")
+                    extracted_image = extracted_image.resize((resized_width, resized_height))
 
             if i % args.gif_frame_frequency == 0:
                 png_filename = f"{i + 1}.png"
@@ -259,7 +296,7 @@ def main():
         elif style in CARTOONGAN_STYLES:
             models.append(cartoongan.load_model(style))
         else:
-            logger.error(f"Non recognizable style: {s}")
+            logger.error(f"Non recognizable style: {style}")
 
     logger.info(f"Cartoonizing images using {', '.join(styles)} style...")
 
@@ -327,7 +364,7 @@ def main():
 
 if __name__ == "__main__":
 
-    logger = logging.getLogger("cartoonizer")
+    logger = logging.getLogger("Cartoonizer")
     logger.propagate = False
     log_lvl = {"debug": logging.DEBUG, "info": logging.INFO,
                "warning": logging.WARNING, "error": logging.ERROR,
