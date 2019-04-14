@@ -436,7 +436,7 @@ class Trainer:
         else:
             self.logger.info("Proceeding training without sample images...")
         self.logger.info("Setting up summary writer to record progress on TensorBoard...")
-        progress_bar = tqdm(list(range(epochs)))
+        progress_bar = tqdm(range(epochs))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
 
         self.logger.info("Starting training loop...")
@@ -449,11 +449,8 @@ class Trainer:
             epoch_idx = trained_epochs + epoch + 1
             progress_bar.set_description(f"Epoch {epoch_idx}")
 
-            for step, source_images in enumerate(ds_source, 1):
-                for images in ds_target.take(1):
-                    target_images = images
-                for images in ds_smooth.take(1):
-                    smooth_images = images
+            for step, (source_images, target_images, smooth_images) in enumerate(
+                    zip(ds_source, ds_target, ds_smooth), 1):
 
                 self.train_step(source_images, target_images, smooth_images,
                                 g, d, g_optimizer, d_optimizer)
