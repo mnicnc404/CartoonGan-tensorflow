@@ -23,7 +23,7 @@ We believe most of you are just interested in cartoonizing your own images (rath
 
 This is by far the most easiest way to interact with the CartoonGAN. Just [visit the page](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html) and upload your images:
 
-[tfjs-demo](tfjs-demo.gif)
+![tfjs-demo](images/tfjs-demo.gif)
 
 Under the hood, TensorFlow.js will load the model and transform your images. However, due to the computation limit of browsers, currently this approach only support static and small images. If you want to generated gif, read next section.
 
