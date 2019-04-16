@@ -13,19 +13,23 @@ This repo demonstrate how you can generate cartoon-style images by:
 python cartoonize.py --styles shinkai hayao hosoda
 ```
 
-## Main focus of this repo
+## Cartoonize first, Train later
 
-This repo put a lot of focus on how you can **actually** use [CartoonGAN](http://openaccess.thecvf.com/content_cvpr_2018/papers/Chen_CartoonGAN_Generative_Adversarial_CVPR_2018_paper.pdf) to transform images. For those who want to train their own CartoonGANs or to understand how to train a [GAN](https://en.wikipedia.org/wiki/Generative_adversarial_network) using latest version of [TensorFlow](https://www.tensorflow.org/), training code implemented completely in [TensorFlow 2.0](https://www.tensorflow.org/alpha) are also provided for reference. See [Train your own models](#train-your-own-models) for more details.
+This repo first focus on how you can **actually** use [CartoonGAN](http://openaccess.thecvf.com/content_cvpr_2018/papers/Chen_CartoonGAN_Generative_Adversarial_CVPR_2018_paper.pdf) to cartoonize images. 
+
+For those who want to train their own CartoonGANs or to understand how to train a [GAN](https://en.wikipedia.org/wiki/Generative_adversarial_network) using latest version of [TensorFlow](https://www.tensorflow.org/), training code implemented completely in [TensorFlow 2.0](https://www.tensorflow.org/alpha) are also provided for reference. See [Train your own models](#train-your-own-models) for more details.
 
 ## Getting Started
 
-Basically, there are 3 approachs to generate cartoon-style images:
+Basically, there are 3 approachs to generate cartoon-style images in this repo:
 
 | Approach | Description |
 | ------------- | ------------- |
 | 1. Visit [web demo](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html) and upload images | Cartoonize images with [TensorFlow.js](https://www.tensorflow.org/js) on browser, no setup needed |
-| 2. Execute [this Colab Notebook](#) | Just execute the commands in the notebook, upload images and that's it|
+| 2. Run [Colab Notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX) | Run [the colab notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX) we created and it will just work |
 | 3. Clone this repo and run script | Suitable for power users and those who want to make this repo better :) |
+
+You can start with your favorite one right now or watch short demos below.
 
 ## Cartoonize using TensorFlow.js
 
@@ -33,10 +37,17 @@ This is by far the easiest way to interact with the CartoonGAN. Just visit the [
 
 ![tfjs-demo](images/tfjs-demo.gif)
 
-Under the hood, we use TensorFlow.js to load the pretrained models and transform your images. However, due to the limitation of browsers, now this approach only support static and small images. If you want to transform gif, proceed to next section.
+You can right-click on the result to save it.
 
-## [TODO] Cartoonize using Colab Notebook 
+Under the hood, the webpage utilize TensorFlow.js to load the pretrained models and transform your images. However, due to the computation limits of the browsers, this approach currently only support static and relatively small images. If you want to transform gif, proceed to next section.
 
+## Cartoonize using Colab Notebook 
+
+The most exciting thing is to cartoonize gifs. We created a [Colab Notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX) which set up everything including [TensorFlow 2.0](https://www.tensorflow.org/alpha) for you to achieve that:
+
+![colab-demo](images/colab-demo.gif)
+
+You got the idea. Try cartoonizing your favorite images using styles available in the notebook.
 
 ## [TODO] Clone this repo and run script
 
