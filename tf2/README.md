@@ -7,7 +7,7 @@ Top-left part of the gif is the original input image, while all other 3 parts ar
 
 This repo demonstrate how you can generate cartoon-style images by:
 - visiting the [CartoonGAN web demo](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html) 
-- using provided [Python script](cartoonize.py) like this:
+- executing provided [Python script](cartoonize.py) like this:
 
 ```bash
 python cartoonize.py --styles shinkai hayao hosoda
@@ -27,13 +27,13 @@ Basically, there are 3 approachs to generate cartoon-style images in this repo:
 
 | Approach | Description |
 | ------------- | ------------- |
-| 1. Visit [web demo](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html) and upload images | Cartoonize images with [TensorFlow.js](https://www.tensorflow.org/js) on browser, no setup needed |
-| 2. Run [Colab Notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX) | Google Colab let us use free GPUs to cartoonize images faster |
-| 3. Clone this repo and run script | Suitable for power users and those who want to make this repo better :) |
+| 1. [Cartoonize using TensorFlow.js](#cartoonize-using-tensorFlow.js) | Cartoonize images with TensorFlow.js on browser, no setup needed |
+| 2. [Cartoonize using Colab Notebook](#cartoonize-using-colab-notebook) | Google Colab let us use free GPUs to cartoonize images faster |
+| 3. [Clone this repo and run script](#clone-this-repo-and-run-script) | Suitable for power users and those who want to make this repo better :) |
 
-You can start with your favorite approach now or first watch demos below.
+You can start with preferred approach or just watch demos shown below.
 
-## Cartoonize using TensorFlow.js
+## [Cartoonize using TensorFlow.js](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html)
 
 This is by far the easiest way to interact with the CartoonGAN. Just visit the [web demo](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html) and upload your images:
 
@@ -43,7 +43,7 @@ You can right-click on the result to save it.
 
 Under the hood, the webpage utilize [TensorFlow.js](https://www.tensorflow.org/js) to load the pretrained models and transform your images. However, due to the computation limits of the browsers, this approach currently only support static and relatively small images. If you want to transform gifs, keep reading.
 
-## Cartoonize using Colab Notebook 
+## [Cartoonize using Colab Notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX) 
 
 The most exciting thing is to cartoonize existing gifs. We created a [Colab notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX) which set up everything including [TensorFlow 2.0](https://www.tensorflow.org/alpha) for you to achieve that:
 
@@ -51,8 +51,11 @@ The most exciting thing is to cartoonize existing gifs. We created a [Colab note
 
 You got the idea. Try cartoonizing your favorite images using styles available in [the notebook](https://colab.research.google.com/drive/1WIZBHix_cYIGsBKa4phIwCq5qXwO8fRX).
 
-## [TODO] Clone this repo and run script
+## Clone this repo and run script
 
+### Setup
+
+### Example usage
 
 
 ## [TODO] Train your own models
