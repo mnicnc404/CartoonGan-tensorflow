@@ -31,7 +31,7 @@ Basically, there are 3 approachs to generate cartoon-style images in this repo:
 | [Cartoonize using Colab Notebook](#cartoonize-using-colab-notebook) | Google Colab let us use free GPUs to cartoonize images faster |
 | [Clone this repo and run script](#clone-this-repo-and-run-script) | Suitable for power users and those who want to make this repo better :) |
 
-You can start with preferred approach or just watch demos shown below.
+You can start with preferred approach or first watch demos shown below.
 
 ## [Cartoonize using TensorFlow.js](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html)
 
@@ -83,13 +83,9 @@ git clone https://www.github.com/keras-team/keras-contrib.git \
     && USE_TF_KERAS=1 python setup.py install
 ```
 
-And if all the installation complete, you're good to go.
+If all installations complete successfully, you're good to go.
 
-### Example usage
-
-
-
-
+### [TODO] Example usage
 
 
 ## [TODO] Train your own models
