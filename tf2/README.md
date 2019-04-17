@@ -27,9 +27,9 @@ Basically, there are 3 approachs to generate cartoon-style images in this repo:
 
 | Approach | Description |
 | ------------- | ------------- |
-| 1. [Cartoonize using TensorFlow.js](#cartoonize-using-tensorFlow.js) | Cartoonize images with TensorFlow.js on browser, no setup needed |
-| 2. [Cartoonize using Colab Notebook](#cartoonize-using-colab-notebook) | Google Colab let us use free GPUs to cartoonize images faster |
-| 3. [Clone this repo and run script](#clone-this-repo-and-run-script) | Suitable for power users and those who want to make this repo better :) |
+| [Cartoonize using TensorFlow.js](#cartoonize-using-tensorflowjs) | Cartoonize images with TensorFlow.js on browser, no setup needed |
+| [Cartoonize using Colab Notebook](#cartoonize-using-colab-notebook) | Google Colab let us use free GPUs to cartoonize images faster |
+| [Clone this repo and run script](#clone-this-repo-and-run-script) | Suitable for power users and those who want to make this repo better :) |
 
 You can start with preferred approach or just watch demos shown below.
 
@@ -53,9 +53,43 @@ You got the idea. Try cartoonizing your favorite images using styles available i
 
 ## Clone this repo and run script
 
+There are mainly 2 situations that you would want to use this approach:
+- you have GPU superior to [Tesla K80](https://www.nvidia.com/en-gb/data-center/tesla-k80/) (default GPU on Colab)
+- you're familiar with Python & TensorFlow and want to contribute to this project
+
 ### Setup
 
+First clone this repo:
+
+```bash
+git clone https://github.com/mnicnc404/CartoonGan-tensorflow.git
+```
+
+For environment management, we recommend [Anaconda](https://www.anaconda.com/). Of course, you will definitely need [TensorFlow 2.0 Alpha](https://www.tensorflow.org/alpha):
+
+```bash
+conda create -n cartoonize python=3.6 -y
+conda activate cartoonize
+pip install tensorflow-gpu==2.0.0-alpha0
+# use `tensorflow==2.0.0-alpha0` if GPU is not available
+```
+
+We also need TensorFlow version of [keras-contrib](https://github.com/keras-team/keras-contrib) for some custom Keras layers:
+
+```bash
+git clone https://www.github.com/keras-team/keras-contrib.git \
+    && cd keras-contrib \
+    && python convert_to_tf_keras.py \
+    && USE_TF_KERAS=1 python setup.py install
+```
+
+And if all the installation complete, you're good to go.
+
 ### Example usage
+
+
+
+
 
 
 ## [TODO] Train your own models
@@ -70,5 +104,5 @@ You got the idea. Try cartoonizing your favorite images using styles available i
     - [Build a Image Input Pipeline](https://www.tensorflow.org/alpha/tutorials/load_data/images)
     - [Get started with TensorBoard](https://www.tensorflow.org/tensorboard/r2/get_started)
     - [Custom layers](https://www.tensorflow.org/tutorials/eager/custom_layers)
-- [Google Colaboratory](https://colab.research.google.com/) which allow us to train the models and cartoonize images using free GPUs as shown in [Cartoonize using Colab Notebook](#cartoonize-using-colab-notebook)
+- [Google Colaboratory](https://colab.research.google.com/) which allow us to train the models and [cartoonize images](#cartoonize-using-colab-notebook) using free GPUs
 - [TensorFlow.js](https://www.tensorflow.org/js) team which help us a lot when building the [online demo](https://leemeng.tw/drafts/generate-anime-using-cartoongan-and-tensorflow.html) for CartoonGAN
