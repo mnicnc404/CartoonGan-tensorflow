@@ -1,13 +1,15 @@
 import os
-import logging
 import tensorflow as tf
 from glob import glob
 from tqdm import tqdm
-from generator import Generator
-from discriminator import Discriminator
 from tensorflow.keras.applications import VGG19
 import numpy as np
 import matplotlib as mpl
+
+from logger import get_logger
+from generator import Generator
+from discriminator import Discriminator
+
 mpl.use("agg")
 import matplotlib.pyplot as plt
 
@@ -30,7 +32,6 @@ class Trainer:
         d_adv_lambda,
         generator_lr,
         discriminator_lr,
-        logger_name,
         data_dir,
         log_dir,
         result_dir,
@@ -49,8 +50,10 @@ class Trainer:
         pretrain_generator_name,
         generator_name,
         discriminator_name,
+        debug,
         **kwargs,
     ):
+        self.debug = debug
         self.ascii = os.name == "nt"
         self.dataset_name = dataset_name
         self.source_domain = source_domain
@@ -86,18 +89,18 @@ class Trainer:
         self.generator_name = generator_name
         self.discriminator_name = discriminator_name
 
-        self.logger = logging.getLogger(logger_name)
+        self.logger = get_logger("Trainer")
 
         if not self.ignore_vgg:
-            logger.info("Setting up VGG19 for computing content loss...")
+            self.logger.info("Setting up VGG19 for computing content loss...")
             input_shape = (self.input_size, self.input_size, 3)
             vgg19 = VGG19(weights="imagenet", include_top=False, input_shape=input_shape)
             self.vgg = tf.keras.Model(inputs=vgg19.input, outputs=vgg19.get_layer("block4_conv4").output)
         else:
-            logger.info("VGG19 will not be used. Content loss will simply imply pixel-wise difference.")
+            self.logger.info("VGG19 will not be used. Content loss will simply imply pixel-wise difference.")
             self.vgg = None
 
-        logger.info(f"Setting up objective functions and metrics using {self.gan_type}...")
+        self.logger.info(f"Setting up objective functions and metrics using {self.gan_type}...")
         self.content_loss_object = tf.keras.losses.MeanAbsoluteError()
         self.generator_loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         if self.gan_type == "gan":
@@ -127,7 +130,7 @@ class Trainer:
             (self.d_smooth_loss_metric, "d_smooth_loss"),
         ]
 
-        logger.info("Setting up checkpoint paths...")
+        self.logger.info("Setting up checkpoint paths...")
         self.pretrain_checkpoint_prefix = os.path.join(
             self.checkpoint_dir, "pretrain", self.pretrain_checkpoint_prefix)
         self.generator_checkpoint_dir = os.path.join(
@@ -164,6 +167,8 @@ class Trainer:
 
     def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
+        if self.debug:
+            files = files[:10]
         num_images = len(files)
         self.logger.info(
             f"Found {num_images} domain{domain} images in {_type}{domain} folder."
@@ -283,7 +288,7 @@ class Trainer:
                                    batch_size=self.batch_size)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        generator = Generator()
+        generator = Generator(base_filters=2 if self.debug else 64)
         generator(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
@@ -415,7 +420,7 @@ class Trainer:
 
         self.logger.info(f"Initializing discriminator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        d = Discriminator()
+        d = Discriminator(base_filters=2 if self.debug else 32)
         d(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
@@ -470,7 +475,7 @@ class Trainer:
                             tf.summary.scalar(name, metric.result(), step=global_step)
                             metric.reset_states()
 
-                    logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
+                    self.logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
                                  f"{global_step * self.batch_size} images processed.")
 
             self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
@@ -495,7 +500,6 @@ def main(**kwargs):
 
 if __name__ == "__main__":
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="full",
@@ -542,7 +546,6 @@ if __name__ == "__main__":
         default="info",
         choices=["debug", "info", "warning", "error", "critical"],
     )
-    parser.add_argument("--logger_out_file", type=str, default=None)
     parser.add_argument("--not_show_progress_bar", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--show_tf_cpp_log", action="store_true")
@@ -553,29 +556,5 @@ if __name__ == "__main__":
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
     args.show_progress = not args.not_show_progress_bar
-    log_lvl = {
-        "debug": logging.DEBUG,
-        "info": logging.INFO,
-        "warning": logging.WARNING,
-        "error": logging.ERROR,
-        "critical": logging.CRITICAL,
-    }
-    args.logger_name = "Trainer"
-    logger = logging.getLogger(args.logger_name)
-    logger.propagate = False
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(log_lvl[args.logging_lvl])
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
-    )
-    stdhandler = logging.StreamHandler(sys.stdout)
-    stdhandler.setFormatter(formatter)
-    logger.addHandler(stdhandler)
-    if args.logger_out_file is not None:
-        fhandler = logging.StreamHandler(open(args.logger_out_file, "a"))
-        fhandler.setFormatter(formatter)
-        args.addHandler(fhandler)
     kwargs = vars(args)
     main(**kwargs)
