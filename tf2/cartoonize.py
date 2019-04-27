@@ -6,7 +6,6 @@ import imageio
 import logging
 import argparse
 import numpy as np
-import tensorflow as tf
 from tqdm import tqdm
 from datetime import datetime
 from style_transfer.comixgan import comixgan
@@ -28,15 +27,15 @@ VALID_EXTENSIONS = ['jpg', 'png', 'gif', 'JPG']
 # TODO: auto-adjust batch-size
 
 parser = argparse.ArgumentParser(description="transform real world images to specified cartoon style(s)")
-parser.add_argument("-s", "--styles", nargs="+", default=[STYLES[0]],
+parser.add_argument("--styles", nargs="+", default=[STYLES[0]],
                     help="specify (multiple) cartoon styles which will be used to transform input images.")
-parser.add_argument("-a", "--all_styles", action="store_true",
+parser.add_argument("--all_styles", action="store_true",
                     help="set true if all styled results are desired")
-parser.add_argument("-i", "--input_dir", type=str, default="input_images",
+parser.add_argument("--input_dir", type=str, default="input_images",
                     help="directory with images to be transformed")
-parser.add_argument("-o", "--output_dir", type=str, default="output_images",
+parser.add_argument("--output_dir", type=str, default="output_images",
                     help="directory where transformed images are saved")
-parser.add_argument("-b", "--batch_size", type=int, default=1,
+parser.add_argument("--batch_size", type=int, default=1,
                     help="number of images that will be transformed in parallel to speed up processing. "
                          "higher value like 4 is recommended if there are gpus.")
 parser.add_argument("--ignore_gif", action="store_true",
@@ -45,22 +44,22 @@ parser.add_argument("--overwrite", action="store_true",
                     help="enable this if you want to regenerate outputs regardless of existing results")
 parser.add_argument("--skip_comparison", action="store_true",
                     help="enable this if you only want individual style result and to save processing time")
-parser.add_argument("-v", "--comparison_view", type=str, default="smart",
+parser.add_argument("--comparison_view", type=str, default="smart",
                     choices=["smart", "horizontal", "vertical", "grid"],
                     help="specify how input images and transformed images are concatenated for easier comparison")
-parser.add_argument("-f", "--gif_frame_frequency", type=int, default=1,
+parser.add_argument("--gif_frame_frequency", type=int, default=1,
                     help="how often should a frame in gif be transformed. freq=1 means that every frame "
                          "in the gif will be transformed by default. set higher frequency can save processing "
                          "time while make the transformed gif less smooth")
-parser.add_argument("-n", "--max_num_frames", type=int, default=100,
+parser.add_argument("--max_num_frames", type=int, default=100,
                     help="max number of frames that will be extracted from a gif. set higher value if longer gif "
                          "is needed")
-parser.add_argument("-k", "--kee_original_size", action="store_true",
+parser.add_argument("--keep_original_size", action="store_true",
                     help="by default the input images will be resized to reasonable size to prevent potential large "
                          "computation and to save file sizes. Enable this if you want the original image size.")
 parser.add_argument("--max_resized_height", type=int, default=300,
                     help="specify the max height of a image after resizing. the resized image will have the same"
-                         "aspect ratio. Set higher value or enable `kee_original_size` if you want larger image.")
+                         "aspect ratio. Set higher value or enable `keep_original_size` if you want larger image.")
 parser.add_argument("--convert_gif_to_mp4", action="store_true",
                     help="convert transformed gif to mp4 which is much more smaller and easier to share. "
                          "`ffmpeg` need to be installed at first.")
@@ -75,13 +74,13 @@ parser.add_argument("--show_tf_cpp_log", action="store_true")
 
 args = parser.parse_args()
 
-TEMPORARY_DIR = f"{args.output_dir}/.tmp"
+TEMPORARY_DIR = os.path.join(f"{args.output_dir}", ".tmp")
 
 
 def pre_processing(image_path, style, expand_dim=True):
     input_image = PIL.Image.open(image_path).convert("RGB")
 
-    if not args.kee_original_size:
+    if not args.keep_original_size:
         width, height = input_image.size
         aspect_ratio = width / height
         resized_height = min(height, args.max_resized_height)
@@ -205,7 +204,7 @@ def convert_gif_to_png(gif_path):
             extracted_image = PIL.Image.new("RGB", image.size)
             extracted_image.paste(image)
 
-            if not args.kee_original_size:
+            if not args.keep_original_size:
                 width, height = extracted_image.size
                 aspect_ratio = width / height
                 resized_height = min(height, args.max_resized_height)
@@ -404,9 +403,3 @@ if __name__ == "__main__":
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
     main()
-
-
-
-
-
-
