@@ -14,3 +14,11 @@ datasets/
 runs/
 result/
 ckpts/
+input_images/
+output_images/
+**/training_checkpoints/
+
+**/*.npy
+.DS_Store
+**/*.tgz
+old_train.py
