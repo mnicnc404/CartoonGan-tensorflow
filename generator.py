@@ -1,8 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Conv2D, Activation
-from layers import ReflectionPadding2D, FlatConv, DownSampleConv,\
-    ResBlock, UpSampleConv
+from layers import ZeroPadding2D, ReflectionPadding2D
+from layers import FlatConv, DownSampleConv, ResBlock, UpSampleConv
 
 
 class Generator(Model):
@@ -101,4 +101,3 @@ if __name__ == "__main__":
     print(f"Output Shape: {out.shape}")
     assert out.shape == shape, "Output shape doesn't match input shape"
     print("Generator's output shape is exactly the same as shape of input.")
-

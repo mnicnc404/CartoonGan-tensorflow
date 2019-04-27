@@ -194,10 +194,8 @@ class UpSampleConv(Model):
     def call(self, x, training=False):
         cur_h = x.shape[1] // 2 * 4
         cur_w = x.shape[2] // 2 * 4
-        boxes = [[0, 0, 1, 1]] * x.shape[0]
-        box_indices = list(range(x.shape[0]))
         # ref: https://www.tensorflow.org/versions/r2.0/api_docs/python/tf/image/crop_and_resize
-        x = tf.image.crop_and_resize(x, boxes, box_indices, (cur_h, cur_w))
+        x = tf.image.resize(x, (cur_h, cur_w))
 
         x = self.deconv1(x)
         x = self.deconv2(x)
