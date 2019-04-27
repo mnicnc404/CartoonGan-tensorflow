@@ -1,35 +1,17 @@
 import os
-from datetime import datetime
-from glob import glob
-import logging
-import numpy as np
 import tensorflow as tf
+from glob import glob
+from tqdm import tqdm
+from tensorflow.keras.applications import VGG19
+import numpy as np
 import matplotlib as mpl
+
+from logger import get_logger
+from generator import Generator
+from discriminator import Discriminator
 
 mpl.use("agg")
 import matplotlib.pyplot as plt
-from generator import Generator
-from fixed_vgg import FixedVGG
-from discriminator import Discriminator
-
-
-__no_tqdm__ = False
-try:
-    from tqdm import tqdm
-except (ModuleNotFoundError, ImportError):
-    __no_tqdm__ = True
-
-
-def _tqdm(res, *args, **kwargs):
-    return res
-
-
-def gram(x):
-    shape_x = tf.shape(x)
-    b = shape_x[0]
-    c = shape_x[3]
-    x = tf.reshape(x, [b, -1, c])
-    return tf.matmul(tf.transpose(x, [0, 2, 1]), x) / tf.cast((tf.size(x) // b), tf.float32)
 
 
 class Trainer:
@@ -39,12 +21,10 @@ class Trainer:
         source_domain,
         target_domain,
         gan_type,
-        conv_arch,
-        num_generator_res_blocks,
+        epochs,
         input_size,
         batch_size,
         sample_size,
-        num_steps,
         reporting_steps,
         content_lambda,
         style_lambda,
@@ -52,34 +32,37 @@ class Trainer:
         d_adv_lambda,
         generator_lr,
         discriminator_lr,
-        show_progress,
-        logger_name,
         data_dir,
-        logdir,
+        log_dir,
         result_dir,
+        checkpoint_dir,
+        generator_checkpoint_prefix,
+        discriminator_checkpoint_prefix,
+        pretrain_checkpoint_prefix,
         pretrain_model_dir,
         model_dir,
         disable_sampling,
-        pass_vgg,
+        ignore_vgg,
         pretrain_learning_rate,
-        pretrain_num_steps,
+        pretrain_epochs,
+        pretrain_saving_epochs,
         pretrain_reporting_steps,
         pretrain_generator_name,
         generator_name,
         discriminator_name,
+        debug,
         **kwargs,
     ):
+        self.debug = debug
         self.ascii = os.name == "nt"
         self.dataset_name = dataset_name
         self.source_domain = source_domain
         self.target_domain = target_domain
         self.gan_type = gan_type
-        self.conv_arch = conv_arch
-        self.num_generator_res_blocks = num_generator_res_blocks
+        self.epochs = epochs
         self.input_size = input_size
         self.batch_size = batch_size
         self.sample_size = sample_size
-        self.num_steps = num_steps
         self.reporting_steps = reporting_steps
         self.content_lambda = content_lambda
         self.style_lambda = style_lambda
@@ -88,29 +71,78 @@ class Trainer:
         self.generator_lr = generator_lr
         self.discriminator_lr = discriminator_lr
         self.data_dir = data_dir
-        self.logdir = logdir
+        self.log_dir = log_dir
         self.result_dir = result_dir
+        self.checkpoint_dir = checkpoint_dir
+        self.generator_checkpoint_prefix = generator_checkpoint_prefix
+        self.discriminator_checkpoint_prefix = discriminator_checkpoint_prefix
+        self.pretrain_checkpoint_prefix = pretrain_checkpoint_prefix
         self.pretrain_model_dir = pretrain_model_dir
         self.model_dir = model_dir
         self.disable_sampling = disable_sampling
-        self.pass_vgg = pass_vgg
+        self.ignore_vgg = ignore_vgg
         self.pretrain_learning_rate = pretrain_learning_rate
-        self.pretrain_num_steps = pretrain_num_steps
+        self.pretrain_epochs = pretrain_epochs
+        self.pretrain_saving_epochs = pretrain_saving_epochs
         self.pretrain_reporting_steps = pretrain_reporting_steps
         self.pretrain_generator_name = pretrain_generator_name
         self.generator_name = generator_name
         self.discriminator_name = discriminator_name
 
-        self.logger = logging.getLogger(logger_name)
+        self.logger = get_logger("Trainer")
 
-        if not show_progress or __no_tqdm__:
-            self.tqdm = _tqdm
+        if not self.ignore_vgg:
+            self.logger.info("Setting up VGG19 for computing content loss...")
+            input_shape = (self.input_size, self.input_size, 3)
+            vgg19 = VGG19(weights="imagenet", include_top=False, input_shape=input_shape)
+            self.vgg = tf.keras.Model(inputs=vgg19.input, outputs=vgg19.get_layer("block4_conv4").output)
         else:
-            self.tqdm = tqdm
+            self.logger.info("VGG19 will not be used. Content loss will simply imply pixel-wise difference.")
+            self.vgg = None
 
-    def _save_generated_images(
-        self, batch_x, image_name=None, num_images_per_row=8
-    ):
+        self.logger.info(f"Setting up objective functions and metrics using {self.gan_type}...")
+        self.content_loss_object = tf.keras.losses.MeanAbsoluteError()
+        self.generator_loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        if self.gan_type == "gan":
+            self.discriminator_loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        elif self.gan_type == "lsgan":
+            self.discriminator_loss_object = tf.keras.losses.MeanSquaredError()
+        else:
+            wrong_msg = f"Non-recognized 'gan_type': {self.gan_type}"
+            self.logger.critical(wrong_msg)
+            raise ValueError(wrong_msg)
+
+        self.g_total_loss_metric = tf.keras.metrics.Mean("g_total_loss", dtype=tf.float32)
+        self.g_adv_loss_metric = tf.keras.metrics.Mean("g_adversarial_loss", dtype=tf.float32)
+        self.content_loss_metric = tf.keras.metrics.Mean("content_loss", dtype=tf.float32)
+        self.d_total_loss_metric = tf.keras.metrics.Mean("d_total_loss", dtype=tf.float32)
+        self.d_real_loss_metric = tf.keras.metrics.Mean("d_real_loss", dtype=tf.float32)
+        self.d_fake_loss_metric = tf.keras.metrics.Mean("d_fake_loss", dtype=tf.float32)
+        self.d_smooth_loss_metric = tf.keras.metrics.Mean("d_smooth_loss", dtype=tf.float32)
+
+        self.metric_and_names = [
+            (self.g_total_loss_metric, "g_total_loss"),
+            (self.g_adv_loss_metric, "g_adversarial_loss"),
+            (self.content_loss_metric, "content_loss"),
+            (self.d_total_loss_metric, "d_total_loss"),
+            (self.d_real_loss_metric, "d_real_loss"),
+            (self.d_fake_loss_metric, "d_fake_loss"),
+            (self.d_smooth_loss_metric, "d_smooth_loss"),
+        ]
+
+        self.logger.info("Setting up checkpoint paths...")
+        self.pretrain_checkpoint_prefix = os.path.join(
+            self.checkpoint_dir, "pretrain", self.pretrain_checkpoint_prefix)
+        self.generator_checkpoint_dir = os.path.join(
+            self.checkpoint_dir, self.generator_checkpoint_prefix)
+        self.generator_checkpoint_prefix = os.path.join(
+            self.generator_checkpoint_dir, self.generator_checkpoint_prefix)
+        self.discriminator_checkpoint_dir = os.path.join(
+            self.checkpoint_dir, self.discriminator_checkpoint_prefix)
+        self.discriminator_checkpoint_prefix = os.path.join(
+            self.discriminator_checkpoint_dir, self.discriminator_checkpoint_prefix)
+
+    def _save_generated_images(self, batch_x, image_name=None, num_images_per_row=6):
         batch_size = batch_x.shape[0]
         num_rows = (
             batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
@@ -129,319 +161,328 @@ class Trainer:
             plt.savefig(os.path.join(directory, image_name))
         plt.close(fig)
 
-    def get_dataset(self, dataset_name, domain, _type, batch_size):
+    def get_num_images(self, dataset_name, domain, _type):
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
-        self.logger.info(
-            f"Found {len(files)} domain{domain} images in {_type}{domain} folder."
-        )
+        return len(files)
 
+    def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
+        files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
+        if self.debug:
+            files = files[:10]
+        num_images = len(files)
+        self.logger.info(
+            f"Found {num_images} domain{domain} images in {_type}{domain} folder."
+        )
         ds = tf.data.Dataset.from_tensor_slices(files)
 
         def image_processing(filename):
-            x = tf.read_file(filename)
+            x = tf.io.read_file(filename)
             x = tf.image.decode_jpeg(x, channels=3)
             x = tf.image.random_crop(x, (self.input_size, self.input_size, 3))
-            img = tf.image.resize_images(x, [self.input_size, self.input_size])
-            img = tf.cast(img, tf.float32) / 127.5 - 1
+            x = tf.image.resize_image_with_crop_or_pad(x, self.input_size, self.input_size)
+            img = tf.cast(x, tf.float32) / 127.5 - 1
             return img
 
-        return ds.map(image_processing).shuffle(10000).repeat().batch(batch_size)
+        ds = ds.map(image_processing).shuffle(num_images)
+        if repeat:
+            ds = ds.repeat()
+        return ds.batch(batch_size)
+
+    def get_sample_images(self, dataset):
+        sample_image_dir = os.path.join(self.result_dir, "sample_batches")
+        if not os.path.exists(sample_image_dir):
+            os.makedirs(sample_image_dir)
+        batch_files = sorted(glob(os.path.join(sample_image_dir, "sample_batch_*.npy")))
+        if not batch_files:
+            self.logger.debug("No existing sample images, generating images from dataset...")
+            real_batches = list()
+            for image_batch in dataset.take(self.sample_size // self.batch_size):
+                real_batches.append(image_batch)
+
+            for i, batch in enumerate(real_batches):
+                np.save(os.path.join(sample_image_dir, f"sample_batch_{i}.npy"), batch.numpy())
+
+            self._save_generated_images(
+                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
+                image_name="sample_images.png",
+            )
+        else:
+            self.logger.debug("Existing sample images found, load them directly.")
+            real_batches = [np.load(f) for f in batch_files]
+
+        return real_batches
+
+    @tf.function
+    def content_loss(self, input_images, generated_images):
+        if self.vgg:
+            input_content = self.vgg(input_images)
+            generated_content = self.vgg(generated_images)
+        else:
+            input_content = input_images
+            generated_content = generated_images
+
+        return self.content_loss_object(input_content, generated_content)
+
+    @tf.function
+    def discriminator_loss(self, real_output, fake_output, smooth_output):
+        real_loss = self.discriminator_loss_object(tf.ones_like(real_output), real_output)
+        fake_loss = self.discriminator_loss_object(tf.zeros_like(fake_output), fake_output)
+        smooth_loss = self.discriminator_loss_object(tf.zeros_like(smooth_output), smooth_output)
+        total_loss = real_loss + fake_loss + smooth_loss
+        return real_loss, fake_loss, smooth_loss, total_loss
+
+    @tf.function
+    def generator_adversarial_loss(self, fake_output):
+        return self.generator_loss_object(tf.ones_like(fake_output), fake_output)
+
+    @tf.function
+    def pretrain_step(self, input_images, generator, optimizer):
+
+        with tf.GradientTape() as tape:
+            generated_images = generator(input_images, training=True)
+            c_loss = self.content_lambda * self.content_loss(input_images, generated_images)
+
+        gradients = tape.gradient(c_loss, generator.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, generator.trainable_variables))
+
+        self.content_loss_metric(c_loss)
+
+    @tf.function
+    def train_step(self, source_images, target_images, smooth_images,
+                   generator, discriminator, g_optimizer, d_optimizer):
+
+        with tf.GradientTape() as g_tape, tf.GradientTape() as d_tape:
+            real_output = discriminator(target_images, training=True)
+            generated_images = generator(source_images, training=True)
+            fake_output = discriminator(generated_images, training=True)
+            smooth_out = discriminator(smooth_images, training=True)
+            d_real_loss, d_fake_loss, d_smooth_loss, d_total_loss = \
+                self.discriminator_loss(real_output, fake_output, smooth_out)
+
+            c_loss = self.content_lambda * self.content_loss(source_images, generated_images)
+            g_adv_loss = self.g_adv_lambda * self.generator_adversarial_loss(fake_output)
+            g_total_loss = c_loss + g_adv_loss
+
+        d_grads = d_tape.gradient(d_total_loss, discriminator.trainable_variables)
+        g_grads = g_tape.gradient(g_total_loss, generator.trainable_variables)
+
+        d_optimizer.apply_gradients(zip(d_grads, discriminator.trainable_variables))
+        g_optimizer.apply_gradients(zip(g_grads, generator.trainable_variables))
+
+        self.g_total_loss_metric(g_total_loss)
+        self.g_adv_loss_metric(g_adv_loss)
+        self.content_loss_metric(c_loss)
+        self.d_total_loss_metric(d_total_loss)
+        self.d_real_loss_metric(d_real_loss)
+        self.d_fake_loss_metric(d_fake_loss)
+        self.d_smooth_loss_metric(d_smooth_loss)
 
     def pretrain_generator(self):
+        self.logger.info(f"Starting to pretrain generator with {self.pretrain_epochs} epochs...")
         self.logger.info(
-            f"Pretraining generator with {self.pretrain_num_steps} steps, "
-            f"batch size: {self.batch_size}..."
+            f"Building `{self.dataset_name}` dataset with domain `{self.source_domain}`..."
         )
-        self.logger.info(
-            f"Building {self.dataset_name} with domain {self.source_domain}..."
-        )
-
-        ds = self.get_dataset(
-            self.dataset_name, self.source_domain, "train", self.batch_size
-        )
-        ds_iter = ds.make_initializable_iterator()
-        input_images = ds_iter.get_next()
-
-        self.logger.info(
-            f"Initializing generator using `{self.conv_arch}` arch, "
-            f"{self.num_generator_res_blocks} residual blocks..."
-        )
-        g = Generator(
-            conv_arch=self.conv_arch,
-            num_res_blocks=self.num_generator_res_blocks
-        )
-        generated_images = g(input_images)
-
-        if self.pass_vgg:
-            self.logger.info("Initializing VGG for computing content loss. "
-                             f"content_lambda: {self.content_lambda}...")
-            vgg = FixedVGG()
-            input_content = vgg(input_images)
-            generated_content = vgg(generated_images)
-            content_loss = self.content_lambda * tf.reduce_mean(
-                tf.abs(input_content - generated_content))
-        else:
-            self.logger.info("Defining content loss without VGG...")
-            content_loss = tf.reduce_mean(tf.abs(input_images - generated_images))
+        dataset = self.get_dataset(dataset_name=self.dataset_name,
+                                   domain=self.source_domain,
+                                   _type="train",
+                                   batch_size=self.batch_size)
+        self.logger.info(f"Initializing generator with "
+                         f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
+        generator = Generator(base_filters=2 if self.debug else 64)
+        generator(tf.keras.Input(
+            shape=(self.input_size, self.input_size, 3),
+            batch_size=self.batch_size))
+        generator.summary()
 
         self.logger.info("Setting up optimizer to update generator's parameters...")
-        opt = tf.train.AdamOptimizer(learning_rate=self.pretrain_learning_rate)
-        train_op = opt.minimize(content_loss, var_list=g.to_save_vars)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.pretrain_learning_rate)
 
-        self.logger.info("Start training...")
-        start = datetime.utcnow()
-        batch_losses = []
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            ds_iter.initializer.run()
+        self.logger.info(f"Try restoring checkpoint: `{self.pretrain_checkpoint_prefix}`...")
+        try:
+            checkpoint = tf.train.Checkpoint(generator=generator)
+            status = checkpoint.restore(tf.train.latest_checkpoint(
+                os.path.join(self.checkpoint_dir, "pretrain")))
+            status.assert_consumed()
 
-            self.logger.info("Loading previous checkpoints...")
-            try:
-                g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
-                self.logger.info(
-                    f"Successfully loaded `{self.pretrain_generator_name}`..."
-                )
-            except (tf.errors.NotFoundError, ValueError):
-                self.logger.info(
-                    f"Checkpoint with name `{self.pretrain_generator_name}` is not found, "
-                    "starting from scratch..."
-                )
-
-            if not self.disable_sampling:
-                self.logger.info(
-                    f"Sampling {self.sample_size} images for tracking generator's performance..."
-                )
-                real_batches = [
-                    sess.run(input_images) for _ in range(self.sample_size//self.batch_size)
-                ]
-
-                self._save_generated_images(
-                    (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
-                    image_name="sample_images.png",
-                )
+            self.logger.info(f"Previous checkpoints has been restored.")
+            trained_epochs = checkpoint.save_counter.numpy()
+            epochs = self.pretrain_epochs - trained_epochs
+            if epochs <= 0:
+                self.logger.info(f"Already trained {trained_epochs} epochs. Set a larger `pretrain_epochs`...")
+                return
             else:
-                self.logger.info("Proceed training without sampling images...")
+                self.logger.info(f"Already trained {trained_epochs} epochs, {epochs} epochs left to be trained...")
+        except AssertionError:
+            self.logger.info(f"Checkpoint is not found, training from scratch with {self.pretrain_epochs} epochs...")
+            trained_epochs = 0
+            epochs = self.pretrain_epochs
 
-            self.logger.info("Starting training loop...")
-            for step in range(1, self.pretrain_num_steps + 1):
-                _, batch_loss = sess.run([train_op, content_loss])
-                batch_losses.append(batch_loss)
+        if not self.disable_sampling:
+            self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
+            real_batches = self.get_sample_images(dataset)
+        else:
+            self.logger.info("Proceeding pretraining without sample images...")
+
+        self.logger.info("Starting training loop, setting up summary writer to record progress on TensorBoard...")
+        progress_bar = tqdm(list(range(epochs)))
+        summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
+
+        num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
+        num_steps_per_epoch = (num_images // self.batch_size) + 1
+
+        for epoch in progress_bar:
+            epoch_idx = trained_epochs + epoch + 1
+            progress_bar.set_description(f"Epoch {epoch_idx}")
+
+            for step, image_batch in enumerate(dataset, 1):
+                self.pretrain_step(image_batch, generator, optimizer)
 
                 if step % self.pretrain_reporting_steps == 0:
 
                     if not self.disable_sampling:
-                        fake_batches = [
-                            sess.run(
-                                generated_images, {input_images: real_b}
-                            ) for real_b in real_batches
-                        ]
+                        fake_batches = [generator(real_b) for real_b in real_batches]
                         self._save_generated_images(
                             (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
-                            image_name=f"generated_images_at_step_{step}.png",
+                            image_name=f"pretrain_generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
 
-                    self.logger.info(f"Saving checkpoints for step {step}...")
-                    g.save(sess, self.model_dir, self.pretrain_generator_name)
-                    self.logger.info(
-                        "[Step {}] batch_loss: {:.3f}, {} elapsed".format(
-                            step, batch_loss, datetime.utcnow() - start
-                        )
-                    )
+                    global_step = (epoch_idx - 1) * num_steps_per_epoch + step
+                    with summary_writer.as_default():
+                        tf.summary.scalar('content_loss',
+                                          self.content_loss_metric.result(),
+                                          step=global_step)
+                    self.content_loss_metric.reset_states()
 
-                    with open(os.path.join(self.result_dir, "batch_losses.tsv"), "a") as f:
-                        f.write(f"{step}\t{batch_loss}\n")
+            if epoch % self.pretrain_saving_epochs == 0:
+                self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
+                checkpoint.save(file_prefix=self.pretrain_checkpoint_prefix)
 
-    def train_gan(self, **kwargs):
-
+    def train_gan(self):
         self.logger.info(
-            f"Starting adversarial training with {self.num_steps} steps, "
+            f"Starting adversarial training with {self.epochs} epochs, "
             f"batch size: {self.batch_size}..."
         )
-        self.logger.info("Building data sets for both source/target/smooth domains...")
-        ds_a = self.get_dataset(
-            self.dataset_name, self.source_domain, "train", self.batch_size
-        )
-        ds_b = self.get_dataset(
-            self.dataset_name, self.target_domain, "train", self.batch_size
-        )
-        ds_b_smooth = self.get_dataset(
-            self.dataset_name, f"{self.target_domain}_smooth", "train", self.batch_size
-        )
+        self.logger.info(f"Building `{self.dataset_name}` datasets for source/target/smooth domains...")
+        ds_source = self.get_dataset(dataset_name=self.dataset_name,
+                                     domain=self.source_domain,
+                                     _type="train",
+                                     batch_size=self.batch_size)
+        ds_target = self.get_dataset(dataset_name=self.dataset_name,
+                                     domain=self.target_domain,
+                                     _type="train",
+                                     batch_size=self.batch_size,
+                                     repeat=True)
+        ds_smooth = self.get_dataset(dataset_name=self.dataset_name,
+                                     domain=f"{self.target_domain}_smooth",
+                                     _type="train",
+                                     batch_size=self.batch_size,
+                                     repeat=True)
 
-        ds_a_iter = ds_a.make_initializable_iterator()
-        ds_b_iter = ds_b.make_initializable_iterator()
-        ds_b_smooth_iter = ds_b_smooth.make_initializable_iterator()
+        self.logger.info("Setting up optimizer to update generator and discriminator...")
+        g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr)
+        d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr)
+        self.logger.info(f"Initializing generator with "
+                         f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
+        g = Generator()
+        g(tf.keras.Input(
+            shape=(self.input_size, self.input_size, 3),
+            batch_size=self.batch_size))
+        # g.summary()
 
-        input_a = ds_a_iter.get_next()
-        input_b = ds_b_iter.get_next()
-        input_b_smooth = ds_b_smooth_iter.get_next()
-
-        self.logger.info(
-            f"Building generator using `{self.conv_arch}` arch, "
-            f"{self.num_generator_res_blocks} residual blocks..."
-        )
-        g = Generator(
-            conv_arch=self.conv_arch,
-            num_res_blocks=self.num_generator_res_blocks
-        )
-        generated_b = g(input_a)
-
-        self.logger.info(f"Building discriminator using `{self.conv_arch}` arch...")
-        d = Discriminator(conv_arch=self.conv_arch, input_size=self.input_size)
-        d_real_out = d(input_b)
-        d_fake_out = d(generated_b, reuse=True)
-        d_smooth_out = d(input_b_smooth, reuse=True)
-
-        self.logger.info("Initializing VGG for computing content/style loss. ")
-        self.logger.info(f"content_lambda: {self.content_lambda}...")
-        self.logger.info(f"style_lambda: {self.style_lambda}...")
-        if self.content_lambda != 0 or self.style_lambda != 0:
-            vgg = FixedVGG()
-            v_fake_out = vgg(generated_b)
-            if self.content_lambda != 0:
-                content_loss = tf.reduce_mean(tf.abs(vgg(input_a) - v_fake_out))
+        self.logger.info(f"Searching existing checkpoints: `{self.generator_checkpoint_prefix}`...")
+        try:
+            g_checkpoint = tf.train.Checkpoint(g=g)
+            g_checkpoint.restore(
+                tf.train.latest_checkpoint(self.generator_checkpoint_dir)).assert_existing_objects_matched()
+            self.logger.info(f"Previous checkpoints has been restored.")
+            trained_epochs = g_checkpoint.save_counter.numpy()
+            epochs = self.epochs - trained_epochs
+            if epochs <= 0:
+                self.logger.info(f"Already trained {trained_epochs} epochs. Set a larger `epochs`...")
+                return
             else:
-                content_loss = tf.constant(0.)
-            if self.style_lambda != 0:
-                style_loss = tf.reduce_mean(tf.abs(
-                    gram(vgg(input_b)) - gram(v_fake_out)))
-            else:
-                style_loss = tf.constant(0.)
+                self.logger.info(f"Already trained {trained_epochs} epochs, {epochs} epochs left to be trained...")
+        except AssertionError:
+            self.logger.info(
+                "Previous checkpoints are not found, trying to load checkpoints from pretraining..."
+            )
 
-        self.logger.info(f"Defining generator/discriminator losses using `{self.gan_type}`...")
-        if self.gan_type == "gan":
-            d_real_loss = tf.reduce_mean(
-                tf.losses.sigmoid_cross_entropy(tf.ones_like(d_real_out), d_real_out)
-            )
-            d_fake_loss = tf.reduce_mean(
-                tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_fake_out), d_fake_out)
-            )
-            d_smooth_loss = tf.reduce_mean(
-                tf.losses.sigmoid_cross_entropy(tf.zeros_like(d_smooth_out), d_smooth_out)
-            )
-        elif self.gan_type == "lsgan":
-            d_real_loss = tf.reduce_mean(
-                tf.losses.mean_squared_error(tf.ones_like(d_real_out), d_real_out)
-            )
-            d_fake_loss = tf.reduce_mean(
-                tf.losses.mean_squared_error(tf.zeros_like(d_fake_out), d_fake_out)
-            )
-            d_smooth_loss = tf.reduce_mean(
-                tf.losses.mean_squared_error(tf.zeros_like(d_smooth_out), d_smooth_out)
-            )
+            try:
+                g_checkpoint = tf.train.Checkpoint(generator=g)
+                g_checkpoint.restore(tf.train.latest_checkpoint(
+                    os.path.join(self.checkpoint_dir, "pretrain"))).assert_existing_objects_matched()
+                self.logger.info(f"Successfully loaded `{self.pretrain_checkpoint_prefix}`...")
+            except AssertionError:
+                self.logger.info("specified pretrained checkpoint is not found, training from scratch...")
+
+            trained_epochs = 0
+            epochs = self.epochs
+
+        self.logger.info(f"Initializing discriminator with "
+                         f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
+        d = Discriminator(base_filters=2 if self.debug else 32)
+        d(tf.keras.Input(
+            shape=(self.input_size, self.input_size, 3),
+            batch_size=self.batch_size))
+        # d.summary()
+
+        self.logger.info(f"Searching existing checkpoints: `{self.discriminator_checkpoint_prefix}`...")
+        try:
+            d_checkpoint = tf.train.Checkpoint(d=d)
+            d_checkpoint.restore(
+                tf.train.latest_checkpoint(self.discriminator_checkpoint_dir)).assert_existing_objects_matched()
+            self.logger.info(f"Previous checkpoints has been restored.")
+        except AssertionError:
+            self.logger.info("specified checkpoint is not found, training from scratch...")
+
+        if not self.disable_sampling:
+            self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
+            real_batches = self.get_sample_images(ds_source)
         else:
-            wrong_msg = f"Not recognized 'gan_type': {self.gan_type}"
-            self.logger.critical(wrong_msg)
-            raise ValueError(wrong_msg)
+            self.logger.info("Proceeding training without sample images...")
+        self.logger.info("Setting up summary writer to record progress on TensorBoard...")
+        progress_bar = tqdm(range(epochs))
+        summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
 
-        d_loss = d_real_loss + d_fake_loss + d_smooth_loss
-        self.logger.info(f"Setting d_adv_lambda to {self.d_adv_lambda}...")
-        d_loss = self.d_adv_lambda * d_loss
+        self.logger.info("Starting training loop...")
+        num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
+        num_steps_per_epoch = (num_images // self.batch_size) + 1
 
-        g_adversarial_loss = tf.reduce_mean(
-            tf.losses.sigmoid_cross_entropy(tf.ones_like(d_fake_out), d_fake_out)
-        )
-        self.logger.info(f"Setting g_adv_lambda to {self.g_adv_lambda}...")
-        g_loss = (
-            self.g_adv_lambda * g_adversarial_loss +
-            self.content_lambda * content_loss +
-            self.style_lambda * style_loss)
+        self.logger.info(f"Number of trained epochs: {trained_epochs}, epochs to be trained: {epochs}, "
+                         f"batch size: {self.batch_size}")
+        for epoch in progress_bar:
+            epoch_idx = trained_epochs + epoch + 1
+            progress_bar.set_description(f"Epoch {epoch_idx}")
 
-        self.logger.info("Defining optimizers...")
-        g_optimizer = tf.train.AdamOptimizer(self.generator_lr)
-        g_train_op = g_optimizer.minimize(g_loss, var_list=g.to_save_vars)
+            for step, (source_images, target_images, smooth_images) in enumerate(
+                    zip(ds_source, ds_target, ds_smooth), 1):
 
-        d_optimizer = tf.train.AdamOptimizer(self.discriminator_lr)
-        d_train_op = d_optimizer.minimize(d_loss, var_list=d.to_save_vars)
-
-        start = datetime.utcnow()
-        with tf.Session() as sess:
-
-            sess.run(tf.global_variables_initializer())
-            ds_a_iter.initializer.run()
-            ds_b_iter.initializer.run()
-            ds_b_smooth_iter.initializer.run()
-
-            self.logger.info("Loading previous generator...")
-            try:
-                g.load(sess, self.model_dir, self.generator_name)
-                self.logger.info(f"Successfully loaded `{self.generator_name}`...")
-            except (tf.errors.NotFoundError, ValueError):
-                self.logger.info(
-                    "Previous generator not found, using pre-trained weights..."
-                )
-                try:
-                    g.load(sess, self.pretrain_model_dir, self.pretrain_generator_name)
-                    self.logger.info(f"Successfully loaded `{self.pretrain_generator_name}`...")
-                except (tf.errors.NotFoundError, ValueError):
-                    self.logger.info(
-                        f"`{self.pretrain_generator_name}` not found, training from scratch...")
-
-            self.logger.info("Loading previous discriminator...")
-            try:
-                d.load(sess, self.model_dir, self.discriminator_name)
-                self.logger.info(f"Successfully loaded `{self.discriminator_name}`...")
-            except (tf.errors.NotFoundError, ValueError):
-                self.logger.info(
-                    "Previous discriminator not found, training from scratch..."
-                )
-
-            if not self.disable_sampling:
-                self.logger.info(
-                    f"Sampling {self.sample_size} images for tracking generator's performance..."
-                )
-                real_batches = [sess.run(input_a) for _ in range(self.sample_size//self.batch_size)]
-                self._save_generated_images(
-                    (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
-                    image_name="sample_images.png",
-                )
-            else:
-                self.logger.info("Train without sampling images...")
-
-            self.logger.info("Starting training loop...")
-            for step in range(1, self.num_steps + 1):
-
-                self.logger.debug(f"[Step {step}] Training discriminator...")
-                _, d_batch_loss = sess.run([d_train_op, d_loss])
-
-                self.logger.debug(f"[Step {step}] Training generator...")
-                _, g_batch_loss, g_content_loss, g_style_loss, g_adv_loss = sess.run(
-                    [g_train_op, g_loss, content_loss, style_loss, g_adversarial_loss]
-                )
+                self.train_step(source_images, target_images, smooth_images,
+                                g, d, g_optimizer, d_optimizer)
 
                 if step % self.reporting_steps == 0:
-                    self.logger.debug(f"Saving step {step}'s progress...")
+
                     if not self.disable_sampling:
-                        fake_batches = [
-                            sess.run(generated_b, {input_a: real_b}) for real_b in real_batches
-                        ]
+                        fake_batches = [g(real_b) for real_b in real_batches]
                         self._save_generated_images(
                             (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
-                            image_name=f"gan_images_at_step_{step}.png",
+                            image_name=f"generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
-                    g.save(sess, self.model_dir, self.generator_name)
-                    d.save(sess, self.model_dir, self.discriminator_name)
-                    time_elapsed = datetime.utcnow() - start
-                    res = ("[Step {}] d_loss: {:.2f}, g_loss: {:.2f}, c_loss: {:.2f}, "
-                           "style_loss: {:.2f}, adv_loss: {:.2f}, time elapsed: {}")
-                    self.logger.info(
-                        res.format(
-                            step,
-                            d_batch_loss,
-                            g_batch_loss,
-                            g_content_loss,
-                            g_style_loss,
-                            g_adv_loss,
-                            time_elapsed,
-                        )
-                    )
 
-                    with open(os.path.join(self.result_dir, "gan_losses.tsv"), "a") as f:
+                    global_step = (epoch_idx - 1) * num_steps_per_epoch + step
+                    with summary_writer.as_default():
+                        for metric, name in self.metric_and_names:
+                            tf.summary.scalar(name, metric.result(), step=global_step)
+                            metric.reset_states()
 
-                        f.write(
-                            f"{step}\t{d_batch_loss}\t{g_batch_loss}\t{g_content_loss}\t"
-                            f"{g_style_loss}\t{g_adv_loss}\t{time_elapsed}\n"
-                        )
+                    self.logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
+                                 f"{global_step * self.batch_size} images processed.")
+
+            self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
+            g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
+            d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
+
+            g.save_weights(os.path.join(self.model_dir, "generator"))
 
 
 def main(**kwargs):
@@ -459,7 +500,6 @@ def main(**kwargs):
 
 if __name__ == "__main__":
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="full",
@@ -467,34 +507,34 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--sample_size", type=int, default=32)
+    parser.add_argument("--sample_size", type=int, default=24)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
-    parser.add_argument("--gan_type", type=str, default="gan",
-                        choices=["gan", "lsgan"])
-    parser.add_argument("--conv_arch", type=str, default="conv_with_in",
-                        choices=["conv_with_in", "coupled_conv",
-                                 "coupled_conv_resblocks"])
-    parser.add_argument("--num_generator_res_blocks", type=int, default=8)
-    parser.add_argument("--num_steps", type=int, default=600_000)
-    parser.add_argument("--reporting_steps", type=int, default=100)
+    parser.add_argument("--gan_type", type=str, default="lsgan", choices=["gan", "lsgan"])
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--reporting_steps", type=int, default=10)
     parser.add_argument("--content_lambda", type=float, default=10)
     parser.add_argument("--style_lambda", type=float, default=1.)
     parser.add_argument("--g_adv_lambda", type=float, default=1)
     parser.add_argument("--d_adv_lambda", type=float, default=1)
     parser.add_argument("--generator_lr", type=float, default=1e-4)
     parser.add_argument("--discriminator_lr", type=float, default=4e-4)
-    parser.add_argument("--pass_vgg", action="store_true")
+    parser.add_argument("--ignore_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
-    parser.add_argument("--pretrain_num_steps", type=int, default=60_000)
-    parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
+    parser.add_argument("--pretrain_epochs", type=int, default=10)
+    parser.add_argument("--pretrain_saving_epochs", type=int, default=1)
+    parser.add_argument("--pretrain_reporting_steps", type=int, default=50)
     parser.add_argument("--data_dir", type=str, default="datasets")
-    parser.add_argument("--logdir", type=str, default="runs")
+    parser.add_argument("--log_dir", type=str, default="runs")
     parser.add_argument("--result_dir", type=str, default="result")
-    parser.add_argument("--pretrain_model_dir", type=str, default="ckpts")
-    parser.add_argument("--model_dir", type=str, default="ckpts")
-    parser.add_argument("--disable_sampling", type=bool, default=False)
-
+    parser.add_argument("--checkpoint_dir", type=str, default="training_checkpoints")
+    parser.add_argument("--generator_checkpoint_prefix", type=str, default="generator")
+    parser.add_argument("--discriminator_checkpoint_prefix", type=str, default="discriminator")
+    parser.add_argument("--pretrain_checkpoint_prefix", type=str, default="pretrain_generator")
+    parser.add_argument("--pretrain_model_dir", type=str, default="models")
+    parser.add_argument("--model_dir", type=str, default="models")
+    parser.add_argument("--disable_sampling", action="store_true")
+    # TODO: rearrange the order of options
     parser.add_argument(
         "--pretrain_generator_name", type=str, default="pretrain_generator"
     )
@@ -506,7 +546,6 @@ if __name__ == "__main__":
         default="info",
         choices=["debug", "info", "warning", "error", "critical"],
     )
-    parser.add_argument("--logger_out_file", type=str, default=None)
     parser.add_argument("--not_show_progress_bar", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--show_tf_cpp_log", action="store_true")
@@ -517,28 +556,5 @@ if __name__ == "__main__":
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
     args.show_progress = not args.not_show_progress_bar
-    log_lvl = {
-        "debug": logging.DEBUG,
-        "info": logging.INFO,
-        "warning": logging.WARNING,
-        "error": logging.ERROR,
-        "critical": logging.CRITICAL,
-    }
-    args.logger_name = "Trainer"
-    logger = logging.getLogger(args.logger_name)
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(log_lvl[args.logging_lvl])
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
-    )
-    stdhandler = logging.StreamHandler(sys.stdout)
-    stdhandler.setFormatter(formatter)
-    logger.addHandler(stdhandler)
-    if args.logger_out_file is not None:
-        fhandler = logging.StreamHandler(open(args.logger_out_file, "a"))
-        fhandler.setFormatter(formatter)
-        args.addHandler(fhandler)
     kwargs = vars(args)
     main(**kwargs)
