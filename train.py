@@ -317,7 +317,7 @@ class Trainer:
                                    batch_size=self.batch_size)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        generator = Generator(base_filters=2 if self.debug else 32)
+        generator = Generator(base_filters=2 if self.debug else 64)
         generator(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
@@ -420,7 +420,7 @@ class Trainer:
         d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        g = Generator(base_filters=2 if self.debug else 32)
+        g = Generator(base_filters=2 if self.debug else 64)
         g(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
