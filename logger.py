@@ -16,4 +16,5 @@ def get_logger(name, log_file=None):
         fhandler.setFormatter(formatter)
         logger.addHandler(fhandler)
     logger.propagate = False
+    logger.setLevel(logging.INFO)
     return logger

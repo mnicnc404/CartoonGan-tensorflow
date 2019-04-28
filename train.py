@@ -3,14 +3,11 @@ import tensorflow as tf
 from glob import glob
 from tqdm import tqdm
 import numpy as np
-import matplotlib as mpl
+from imageio import imwrite
 
 from logger import get_logger
 from generator import Generator
 from discriminator import Discriminator
-
-mpl.use("agg")
-import matplotlib.pyplot as plt
 
 
 class Trainer:
@@ -151,24 +148,46 @@ class Trainer:
         self.discriminator_checkpoint_prefix = os.path.join(
             self.discriminator_checkpoint_dir, self.discriminator_checkpoint_prefix)
 
-    def _save_generated_images(self, batch_x, image_name=None, num_images_per_row=6):
-        batch_size = batch_x.shape[0]
-        num_rows = (
-            batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
-        )
-        fig_width = 12
-        fig_height = 8
-        fig = plt.figure(figsize=(fig_width, fig_height))
-        for i in range(batch_size):
-            fig.add_subplot(num_rows, num_images_per_row, i + 1)
-            plt.imshow(batch_x[i])
-            plt.axis("off")
-        if image_name is not None:
-            directory = self.result_dir
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-            plt.savefig(os.path.join(directory, image_name))
-        plt.close(fig)
+    def _save_generated_images(self, batch_x, image_name, nrow=2, ncol=4):
+        # NOTE: 0 <= batch_x <= 1, float32, numpy.ndarray
+        # NOTE: not doing inplace multiplication on batch_x
+        n, h, w, c = batch_x.shape
+        real_nrow = n // ncol
+        remainder = n % ncol
+        if n >= nrow * ncol:
+            remainder = 0
+        else:
+            if remainder != 0:
+                real_nrow += 1
+            remainder = ncol - remainder
+        real_nrow = min(real_nrow, nrow)
+        out_arrs = []
+        for i in range(real_nrow):
+            cur_row = np.concatenate(batch_x[(ncol * i):(ncol * (i + 1))], 1)
+            if i == real_nrow - 1 and remainder != 0:
+                cur_row = np.concatenate((cur_row, np.zeros(
+                    [h, remainder * w, c], dtype=np.uint8)), 1)
+            out_arrs.append(cur_row)
+        out_arrs = np.concatenate(out_arrs, 0)
+        if not os.path.isdir(self.result_dir):
+            os.makedirs(self.result_dir)
+        imwrite(os.path.join(self.result_dir, image_name), out_arrs)
+        # num_rows = (
+        #     batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
+        # )
+        # fig_width = 12
+        # fig_height = 8
+        # fig = plt.figure(figsize=(fig_width, fig_height))
+        # for i in range(batch_size):
+        #     fig.add_subplot(num_rows, num_images_per_row, i + 1)
+        #     plt.imshow(batch_x[i])
+        #     plt.axis("off")
+        # if image_name is not None:
+        #     directory = self.result_dir
+        #     if not os.path.exists(directory):
+        #         os.makedirs(directory)
+        #     plt.savefig(os.path.join(directory, image_name))
+        # plt.close(fig)
 
     def get_num_images(self, dataset_name, domain, _type):
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
@@ -212,7 +231,8 @@ class Trainer:
                 np.save(os.path.join(sample_image_dir, f"sample_batch_{i}.npy"), batch.numpy())
 
             self._save_generated_images(
-                (np.clip(np.concatenate(real_batches, axis=0), -1, 1) + 1) / 2,
+                ((np.clip(np.concatenate(
+                    real_batches, axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
                 image_name="sample_images.png",
             )
         else:
@@ -356,7 +376,8 @@ class Trainer:
                     if not self.disable_sampling:
                         fake_batches = [generator(real_b) for real_b in real_batches]
                         self._save_generated_images(
-                            (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
+                            ((np.clip(np.concatenate(
+                                fake_batches, axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
                             image_name=(f"pretrain_generated_images_at_epoch_{epoch_idx}"
                                         f"_step_{step}.png"),
                         )
@@ -491,7 +512,8 @@ class Trainer:
                     if not self.disable_sampling:
                         fake_batches = [g(real_b) for real_b in real_batches]
                         self._save_generated_images(
-                            (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
+                            ((np.clip(np.concatenate(
+                                fake_batches, axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
                             image_name=f"generated_images_at_epoch_{epoch_idx}_step_{step}.png",
                         )
 
@@ -533,7 +555,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--sample_size", type=int, default=24)
+    parser.add_argument("--sample_size", type=int, default=8)
     parser.add_argument("--source_domain", type=str, default="A")
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--gan_type", type=str, default="lsgan", choices=["gan", "lsgan"])
@@ -566,12 +588,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--generator_name", type=str, default="generator")
     parser.add_argument("--discriminator_name", type=str, default="discriminator")
-    parser.add_argument(
-        "--logging_lvl",
-        type=str,
-        default="info",
-        choices=["debug", "info", "warning", "error", "critical"],
-    )
     parser.add_argument("--not_show_progress_bar", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--show_tf_cpp_log", action="store_true")
