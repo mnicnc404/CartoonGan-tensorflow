@@ -105,7 +105,8 @@ class Trainer:
                 "~", ".keras", "models",
                 "vgg19_weights_tf_dim_ordering_tf_kernels_notop.h5")), by_name=True)
         else:
-            self.logger.info("VGG19 will not be used. Content loss will simply imply pixel-wise difference.")
+            self.logger.info("VGG19 will not be used. "
+                             "Content loss will simply imply pixel-wise difference.")
             self.vgg = None
 
         self.logger.info(f"Setting up objective functions and metrics using {self.gan_type}...")
@@ -316,22 +317,27 @@ class Trainer:
             trained_epochs = checkpoint.save_counter.numpy()
             epochs = self.pretrain_epochs - trained_epochs
             if epochs <= 0:
-                self.logger.info(f"Already trained {trained_epochs} epochs. Set a larger `pretrain_epochs`...")
+                self.logger.info(f"Already trained {trained_epochs} epochs. "
+                                 "Set a larger `pretrain_epochs`...")
                 return
             else:
-                self.logger.info(f"Already trained {trained_epochs} epochs, {epochs} epochs left to be trained...")
+                self.logger.info(f"Already trained {trained_epochs} epochs, "
+                                 f"{epochs} epochs left to be trained...")
         except AssertionError:
-            self.logger.info(f"Checkpoint is not found, training from scratch with {self.pretrain_epochs} epochs...")
+            self.logger.info(f"Checkpoint is not found, "
+                             f"training from scratch with {self.pretrain_epochs} epochs...")
             trained_epochs = 0
             epochs = self.pretrain_epochs
 
         if not self.disable_sampling:
-            self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
+            self.logger.info(f"Sampling {self.sample_size} images for monitoring "
+                             "generator's performance onward...")
             real_batches = self.get_sample_images(dataset)
         else:
             self.logger.info("Proceeding pretraining without sample images...")
 
-        self.logger.info("Starting training loop, setting up summary writer to record progress on TensorBoard...")
+        self.logger.info("Starting training loop, "
+                         "setting up summary writer to record progress on TensorBoard...")
         progress_bar = tqdm(list(range(epochs)))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
 
@@ -351,7 +357,8 @@ class Trainer:
                         fake_batches = [generator(real_b) for real_b in real_batches]
                         self._save_generated_images(
                             (np.clip(np.concatenate(fake_batches, axis=0), -1, 1) + 1) / 2,
-                            image_name=f"pretrain_generated_images_at_epoch_{epoch_idx}_step_{step}.png",
+                            image_name=(f"pretrain_generated_images_at_epoch_{epoch_idx}"
+                                        f"_step_{step}.png"),
                         )
 
                     global_step = (epoch_idx - 1) * num_steps_per_epoch + step
@@ -370,7 +377,8 @@ class Trainer:
             f"Starting adversarial training with {self.epochs} epochs, "
             f"batch size: {self.batch_size}..."
         )
-        self.logger.info(f"Building `{self.dataset_name}` datasets for source/target/smooth domains...")
+        self.logger.info(f"Building `{self.dataset_name}` "
+                         "datasets for source/target/smooth domains...")
         ds_source = self.get_dataset(dataset_name=self.dataset_name,
                                      domain=self.source_domain,
                                      _type="train",
@@ -401,15 +409,18 @@ class Trainer:
         try:
             g_checkpoint = tf.train.Checkpoint(g=g)
             g_checkpoint.restore(
-                tf.train.latest_checkpoint(self.generator_checkpoint_dir)).assert_existing_objects_matched()
+                tf.train.latest_checkpoint(
+                    self.generator_checkpoint_dir)).assert_existing_objects_matched()
             self.logger.info(f"Previous checkpoints has been restored.")
             trained_epochs = g_checkpoint.save_counter.numpy()
             epochs = self.epochs - trained_epochs
             if epochs <= 0:
-                self.logger.info(f"Already trained {trained_epochs} epochs. Set a larger `epochs`...")
+                self.logger.info(f"Already trained {trained_epochs} epochs. "
+                                 "Set a larger `epochs`...")
                 return
             else:
-                self.logger.info(f"Already trained {trained_epochs} epochs, {epochs} epochs left to be trained...")
+                self.logger.info(f"Already trained {trained_epochs} epochs, "
+                                 f"{epochs} epochs left to be trained...")
         except AssertionError:
             self.logger.info(
                 "Previous checkpoints are not found, trying to load checkpoints from pretraining..."
@@ -418,10 +429,13 @@ class Trainer:
             try:
                 g_checkpoint = tf.train.Checkpoint(generator=g)
                 g_checkpoint.restore(tf.train.latest_checkpoint(
-                    os.path.join(self.checkpoint_dir, "pretrain"))).assert_existing_objects_matched()
-                self.logger.info(f"Successfully loaded `{self.pretrain_checkpoint_prefix}`...")
+                    os.path.join(
+                        self.checkpoint_dir, "pretrain"))).assert_existing_objects_matched()
+                self.logger.info("Successfully loaded "
+                                 f"`{self.pretrain_checkpoint_prefix}`...")
             except AssertionError:
-                self.logger.info("specified pretrained checkpoint is not found, training from scratch...")
+                self.logger.info("specified pretrained checkpoint is not found, "
+                                 "training from scratch...")
 
             trained_epochs = 0
             epochs = self.epochs
@@ -434,17 +448,20 @@ class Trainer:
             batch_size=self.batch_size))
         # d.summary()
 
-        self.logger.info(f"Searching existing checkpoints: `{self.discriminator_checkpoint_prefix}`...")
+        self.logger.info("Searching existing checkpoints: "
+                         f"`{self.discriminator_checkpoint_prefix}`...")
         try:
             d_checkpoint = tf.train.Checkpoint(d=d)
             d_checkpoint.restore(
-                tf.train.latest_checkpoint(self.discriminator_checkpoint_dir)).assert_existing_objects_matched()
+                tf.train.latest_checkpoint(
+                    self.discriminator_checkpoint_dir)).assert_existing_objects_matched()
             self.logger.info(f"Previous checkpoints has been restored.")
         except AssertionError:
             self.logger.info("specified checkpoint is not found, training from scratch...")
 
         if not self.disable_sampling:
-            self.logger.info(f"Sampling {self.sample_size} images for monitoring generator's performance onward...")
+            self.logger.info(f"Sampling {self.sample_size} images for monitoring "
+                             "generator's performance onward...")
             real_batches = self.get_sample_images(ds_source)
         else:
             self.logger.info("Proceeding training without sample images...")
@@ -456,7 +473,8 @@ class Trainer:
         num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
         num_steps_per_epoch = (num_images // self.batch_size) + 1
 
-        self.logger.info(f"Number of trained epochs: {trained_epochs}, epochs to be trained: {epochs}, "
+        self.logger.info(f"Number of trained epochs: {trained_epochs}, "
+                         f"epochs to be trained: {epochs}, "
                          f"batch size: {self.batch_size}")
         for epoch in progress_bar:
             epoch_idx = trained_epochs + epoch + 1
@@ -484,7 +502,7 @@ class Trainer:
                             metric.reset_states()
 
                     self.logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
-                                 f"{global_step * self.batch_size} images processed.")
+                                      f"{global_step * self.batch_size} images processed.")
 
             self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
             g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
