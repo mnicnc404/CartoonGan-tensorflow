@@ -188,7 +188,7 @@ class Trainer:
             x = tf.io.read_file(filename)
             x = tf.image.decode_jpeg(x, channels=3)
             x = tf.image.random_crop(x, (self.input_size, self.input_size, 3))
-            x = tf.image.resize_image_with_crop_or_pad(x, self.input_size, self.input_size)
+            x = tf.image.resize(x, (self.input_size, self.input_size))
             img = tf.cast(x, tf.float32) / 127.5 - 1
             return img
 
