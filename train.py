@@ -2,7 +2,6 @@ import os
 import tensorflow as tf
 from glob import glob
 from tqdm import tqdm
-from tensorflow.keras.applications import VGG19
 import numpy as np
 import matplotlib as mpl
 
@@ -93,9 +92,18 @@ class Trainer:
 
         if not self.ignore_vgg:
             self.logger.info("Setting up VGG19 for computing content loss...")
+            from tensorflow.keras.applications import VGG19
+            from tensorflow.keras.layers import Conv2D
             input_shape = (self.input_size, self.input_size, 3)
-            vgg19 = VGG19(weights="imagenet", include_top=False, input_shape=input_shape)
-            self.vgg = tf.keras.Model(inputs=vgg19.input, outputs=vgg19.get_layer("block4_conv4").output)
+            # download model using kwarg weights="imagenet"
+            base_model = VGG19(weights="imagenet", include_top=False, input_shape=input_shape)
+            tmp_vgg_output = base_model.get_layer("block4_conv3").output
+            tmp_vgg_output = Conv2D(512, (3, 3), activation='linear', padding='same',
+                                    name='block4_conv4')(tmp_vgg_output)
+            self.vgg = tf.keras.Model(inputs=base_model.input, outputs=tmp_vgg_output)
+            self.vgg.load_weights(os.path.expanduser(os.path.join(
+                "~", ".keras", "models",
+                "vgg19_weights_tf_dim_ordering_tf_kernels_notop.h5")), by_name=True)
         else:
             self.logger.info("VGG19 will not be used. Content loss will simply imply pixel-wise difference.")
             self.vgg = None
