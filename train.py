@@ -194,6 +194,7 @@ class Trainer:
         return len(files)
 
     def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
+        is_train = _type == 'train'
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
         if self.debug:
             files = files[:10]
@@ -203,15 +204,17 @@ class Trainer:
         )
         ds = tf.data.Dataset.from_tensor_slices(files)
 
-        def image_processing(filename):
+        def image_processing(filename, is_train):
             x = tf.io.read_file(filename)
             x = tf.image.decode_jpeg(x, channels=3)
-            x = tf.image.random_crop(x, (self.input_size, self.input_size, 3))
+            if is_train:
+                x = tf.image.random_crop(x, (self.input_size, self.input_size, 3))
+                x = tf.image.random_flip_left_right(x)
             x = tf.image.resize(x, (self.input_size, self.input_size))
             img = tf.cast(x, tf.float32) / 127.5 - 1
             return img
 
-        ds = ds.map(image_processing).shuffle(num_images)
+        ds = ds.map(lambda cur_x: image_processing(cur_x, is_train)).shuffle(num_images)
         if repeat:
             ds = ds.repeat()
         return ds.batch(batch_size)
@@ -324,7 +327,9 @@ class Trainer:
         generator.summary()
 
         self.logger.info("Setting up optimizer to update generator's parameters...")
-        optimizer = tf.keras.optimizers.Adam(learning_rate=self.pretrain_learning_rate)
+        optimizer = tf.keras.optimizers.Adam(
+            learning_rate=self.pretrain_learning_rate,
+            beta1=0.5)
 
         self.logger.info(f"Try restoring checkpoint: `{self.pretrain_checkpoint_prefix}`...")
         try:
