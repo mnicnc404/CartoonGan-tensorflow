@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Conv2D, BatchNormalization, LeakyReLU
 from keras_contrib.layers import InstanceNormalization
-from layers import ReflectionPadding2D, StridedConv
+from layers import ZeroPadding2D, ReflectionPadding2D, StridedConv
 
 
 class Discriminator(Model):
@@ -79,4 +79,3 @@ if __name__ == "__main__":
     d.summary()
     print(f"Input  Shape: {t.shape}")
     print(f"Output Shape: {out.shape}")
-

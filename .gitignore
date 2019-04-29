@@ -22,3 +22,5 @@ output_images/
 .DS_Store
 **/*.tgz
 old_train.py
+
+clean.sh

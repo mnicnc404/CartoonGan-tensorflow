@@ -172,26 +172,6 @@ class Trainer:
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
         imwrite(os.path.join(self.result_dir, image_name), out_arrs)
-        # num_rows = (
-        #     batch_size // num_images_per_row if batch_size >= num_images_per_row else 1
-        # )
-        # fig_width = 12
-        # fig_height = 8
-        # fig = plt.figure(figsize=(fig_width, fig_height))
-        # for i in range(batch_size):
-        #     fig.add_subplot(num_rows, num_images_per_row, i + 1)
-        #     plt.imshow(batch_x[i])
-        #     plt.axis("off")
-        # if image_name is not None:
-        #     directory = self.result_dir
-        #     if not os.path.exists(directory):
-        #         os.makedirs(directory)
-        #     plt.savefig(os.path.join(directory, image_name))
-        # plt.close(fig)
-
-    def get_num_images(self, dataset_name, domain, _type):
-        files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
-        return len(files)
 
     def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
         is_train = _type == 'train'
@@ -215,9 +195,11 @@ class Trainer:
             return img
 
         ds = ds.map(lambda cur_x: image_processing(cur_x, is_train)).shuffle(num_images)
+        steps = int(np.ceil(num_images/batch_size))
         if repeat:
             ds = ds.repeat()
-        return ds.batch(batch_size)
+            steps = float('inf')
+        return ds.batch(batch_size), steps
 
     def get_sample_images(self, dataset):
         sample_image_dir = os.path.join(self.result_dir, "sample_batches")
@@ -314,10 +296,10 @@ class Trainer:
         self.logger.info(
             f"Building `{self.dataset_name}` dataset with domain `{self.source_domain}`..."
         )
-        dataset = self.get_dataset(dataset_name=self.dataset_name,
-                                   domain=self.source_domain,
-                                   _type="train",
-                                   batch_size=self.batch_size)
+        dataset, steps_per_epoch = self.get_dataset(dataset_name=self.dataset_name,
+                                                    domain=self.source_domain,
+                                                    _type="train",
+                                                    batch_size=self.batch_size)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         generator = Generator(base_filters=2 if self.debug else 64)
@@ -361,19 +343,17 @@ class Trainer:
         else:
             self.logger.info("Proceeding pretraining without sample images...")
 
-        self.logger.info("Starting training loop, "
+        self.logger.info("Starting pre-training loop, "
                          "setting up summary writer to record progress on TensorBoard...")
-        progress_bar = tqdm(list(range(epochs)))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
 
-        num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
-        num_steps_per_epoch = (num_images // self.batch_size) + 1
-
-        for epoch in progress_bar:
+        for epoch in range(epochs):
             epoch_idx = trained_epochs + epoch + 1
-            progress_bar.set_description(f"Epoch {epoch_idx}")
 
-            for step, image_batch in enumerate(dataset, 1):
+            for step, image_batch in tqdm(
+                    enumerate(dataset, 1),
+                    desc=f"Pretrain Epoch {epoch + 1}/{epochs}",
+                    total=steps_per_epoch):
                 self.pretrain_step(image_batch, generator, optimizer)
 
                 if step % self.pretrain_reporting_steps == 0:
@@ -382,12 +362,13 @@ class Trainer:
                         fake_batches = [generator(real_b) for real_b in real_batches]
                         self._save_generated_images(
                             ((np.clip(np.concatenate(
-                                fake_batches, axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
+                                fake_batches,
+                                axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
                             image_name=(f"pretrain_generated_images_at_epoch_{epoch_idx}"
                                         f"_step_{step}.png"),
                         )
 
-                    global_step = (epoch_idx - 1) * num_steps_per_epoch + step
+                    global_step = (epoch_idx - 1) * steps_per_epoch + step
                     with summary_writer.as_default():
                         tf.summary.scalar('content_loss',
                                           self.content_loss_metric.result(),
@@ -405,24 +386,24 @@ class Trainer:
         )
         self.logger.info(f"Building `{self.dataset_name}` "
                          "datasets for source/target/smooth domains...")
-        ds_source = self.get_dataset(dataset_name=self.dataset_name,
-                                     domain=self.source_domain,
-                                     _type="train",
-                                     batch_size=self.batch_size)
-        ds_target = self.get_dataset(dataset_name=self.dataset_name,
-                                     domain=self.target_domain,
-                                     _type="train",
-                                     batch_size=self.batch_size,
-                                     repeat=True)
-        ds_smooth = self.get_dataset(dataset_name=self.dataset_name,
-                                     domain=f"{self.target_domain}_smooth",
-                                     _type="train",
-                                     batch_size=self.batch_size,
-                                     repeat=True)
+        ds_source, steps_per_epoch = self.get_dataset(dataset_name=self.dataset_name,
+                                                      domain=self.source_domain,
+                                                      _type="train",
+                                                      batch_size=self.batch_size)
+        ds_target, _ = self.get_dataset(dataset_name=self.dataset_name,
+                                        domain=self.target_domain,
+                                        _type="train",
+                                        batch_size=self.batch_size,
+                                        repeat=True)
+        ds_smooth, _ = self.get_dataset(dataset_name=self.dataset_name,
+                                        domain=f"{self.target_domain}_smooth",
+                                        _type="train",
+                                        batch_size=self.batch_size,
+                                        repeat=True)
 
         self.logger.info("Setting up optimizer to update generator and discriminator...")
-        g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr)
-        d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr)
+        g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr, beta_1=.5)
+        d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr, beta_1=.5)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         g = Generator(base_filters=2 if self.debug else 64)
@@ -492,22 +473,20 @@ class Trainer:
         else:
             self.logger.info("Proceeding training without sample images...")
         self.logger.info("Setting up summary writer to record progress on TensorBoard...")
-        progress_bar = tqdm(range(epochs))
         summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
 
         self.logger.info("Starting training loop...")
-        num_images = self.get_num_images(self.dataset_name, self.source_domain, "train")
-        num_steps_per_epoch = (num_images // self.batch_size) + 1
 
         self.logger.info(f"Number of trained epochs: {trained_epochs}, "
                          f"epochs to be trained: {epochs}, "
                          f"batch size: {self.batch_size}")
-        for epoch in progress_bar:
+        for epoch in range(epochs):
             epoch_idx = trained_epochs + epoch + 1
-            progress_bar.set_description(f"Epoch {epoch_idx}")
 
-            for step, (source_images, target_images, smooth_images) in enumerate(
-                    zip(ds_source, ds_target, ds_smooth), 1):
+            for step, (source_images, target_images, smooth_images) in tqdm(
+                    enumerate(zip(ds_source, ds_target, ds_smooth), 1),
+                    desc=f'Train {epoch + 1}/{epochs}',
+                    total=steps_per_epoch):
 
                 self.train_step(source_images, target_images, smooth_images,
                                 g, d, g_optimizer, d_optimizer)
@@ -518,16 +497,17 @@ class Trainer:
                         fake_batches = [g(real_b) for real_b in real_batches]
                         self._save_generated_images(
                             ((np.clip(np.concatenate(
-                                fake_batches, axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
-                            image_name=f"generated_images_at_epoch_{epoch_idx}_step_{step}.png",
+                                fake_batches,
+                                axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
+                            image_name=("generated_images_at_epoch_"
+                                        f"{epoch_idx}_step_{step}.png"),
                         )
 
-                    global_step = (epoch_idx - 1) * num_steps_per_epoch + step
+                    global_step = (epoch_idx - 1) * steps_per_epoch + step
                     with summary_writer.as_default():
                         for metric, name in self.metric_and_names:
                             tf.summary.scalar(name, metric.result(), step=global_step)
                             metric.reset_states()
-
                     self.logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
                                       f"{global_step * self.batch_size} images processed.")
 
@@ -570,11 +550,11 @@ if __name__ == "__main__":
     parser.add_argument("--style_lambda", type=float, default=1.)
     parser.add_argument("--g_adv_lambda", type=float, default=1)
     parser.add_argument("--d_adv_lambda", type=float, default=1)
-    parser.add_argument("--generator_lr", type=float, default=1e-4)
-    parser.add_argument("--discriminator_lr", type=float, default=4e-4)
+    parser.add_argument("--generator_lr", type=float, default=1e-5)
+    parser.add_argument("--discriminator_lr", type=float, default=1e-5)
     parser.add_argument("--ignore_vgg", action="store_true")
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
-    parser.add_argument("--pretrain_epochs", type=int, default=10)
+    parser.add_argument("--pretrain_epochs", type=int, default=2)
     parser.add_argument("--pretrain_saving_epochs", type=int, default=1)
     parser.add_argument("--pretrain_reporting_steps", type=int, default=50)
     parser.add_argument("--data_dir", type=str, default="datasets")
