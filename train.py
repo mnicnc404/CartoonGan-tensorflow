@@ -10,6 +10,15 @@ from generator import Generator
 from discriminator import Discriminator
 
 
+@tf.function
+def gram(x):
+    shape_x = tf.shape(x)
+    b = shape_x[0]
+    c = shape_x[3]
+    x = tf.reshape(x, [b, -1, c])
+    return tf.matmul(tf.transpose(x, [0, 2, 1]), x) / tf.cast((tf.size(x) // b), tf.float32)
+
+
 class Trainer:
     def __init__(
         self,
@@ -107,10 +116,11 @@ class Trainer:
             self.vgg = None
 
         self.logger.info(f"Setting up objective functions and metrics using {self.gan_type}...")
-        self.content_loss_object = tf.keras.losses.MeanAbsoluteError()
+        self.mae = tf.keras.losses.MeanAbsoluteError()
         self.generator_loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         if self.gan_type == "gan":
-            self.discriminator_loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+            self.discriminator_loss_object = tf.keras.losses.BinaryCrossentropy(
+                from_logits=True)
         elif self.gan_type == "lsgan":
             self.discriminator_loss_object = tf.keras.losses.MeanSquaredError()
         else:
@@ -121,6 +131,7 @@ class Trainer:
         self.g_total_loss_metric = tf.keras.metrics.Mean("g_total_loss", dtype=tf.float32)
         self.g_adv_loss_metric = tf.keras.metrics.Mean("g_adversarial_loss", dtype=tf.float32)
         self.content_loss_metric = tf.keras.metrics.Mean("content_loss", dtype=tf.float32)
+        self.style_loss_metric = tf.keras.metrics.Mean("style_loss", dtype=tf.float32)
         self.d_total_loss_metric = tf.keras.metrics.Mean("d_total_loss", dtype=tf.float32)
         self.d_real_loss_metric = tf.keras.metrics.Mean("d_real_loss", dtype=tf.float32)
         self.d_fake_loss_metric = tf.keras.metrics.Mean("d_fake_loss", dtype=tf.float32)
@@ -130,6 +141,7 @@ class Trainer:
             (self.g_total_loss_metric, "g_total_loss"),
             (self.g_adv_loss_metric, "g_adversarial_loss"),
             (self.content_loss_metric, "content_loss"),
+            (self.style_loss_metric, "style_loss"),
             (self.d_total_loss_metric, "d_total_loss"),
             (self.d_real_loss_metric, "d_real_loss"),
             (self.d_fake_loss_metric, "d_fake_loss"),
@@ -176,8 +188,6 @@ class Trainer:
     def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
         is_train = _type == 'train'
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
-        if self.debug:
-            files = files[:10]
         num_images = len(files)
         self.logger.info(
             f"Found {num_images} domain{domain} images in {_type}{domain} folder."
@@ -227,21 +237,27 @@ class Trainer:
         return real_batches
 
     @tf.function
-    def content_loss(self, input_images, generated_images):
+    def pass_to_vgg(self, tensor):
         if self.vgg:
-            input_content = self.vgg(input_images)
-            generated_content = self.vgg(generated_images)
-        else:
-            input_content = input_images
-            generated_content = generated_images
+            tensor = self.vgg(tensor)
+        return tensor
 
-        return self.content_loss_object(input_content, generated_content)
+    @tf.function
+    def content_loss(self, input_images, generated_images):
+        return self.mae(input_images, generated_images)
+
+    @tf.function
+    def style_loss(self, input_images, generated_images):
+        input_images = gram(input_images)
+        generated_images = gram(generated_images)
+        return self.mae(input_images, generated_images)
 
     @tf.function
     def discriminator_loss(self, real_output, fake_output, smooth_output):
         real_loss = self.discriminator_loss_object(tf.ones_like(real_output), real_output)
         fake_loss = self.discriminator_loss_object(tf.zeros_like(fake_output), fake_output)
-        smooth_loss = self.discriminator_loss_object(tf.zeros_like(smooth_output), smooth_output)
+        smooth_loss = self.discriminator_loss_object(
+            tf.zeros_like(smooth_output), smooth_output)
         total_loss = real_loss + fake_loss + smooth_loss
         return real_loss, fake_loss, smooth_loss, total_loss
 
@@ -254,7 +270,8 @@ class Trainer:
 
         with tf.GradientTape() as tape:
             generated_images = generator(input_images, training=True)
-            c_loss = self.content_lambda * self.content_loss(input_images, generated_images)
+            c_loss = self.content_lambda * self.content_loss(
+                self.pass_to_vgg(input_images), self.pass_to_vgg(generated_images))
 
         gradients = tape.gradient(c_loss, generator.trainable_variables)
         optimizer.apply_gradients(zip(gradients, generator.trainable_variables))
@@ -273,9 +290,14 @@ class Trainer:
             d_real_loss, d_fake_loss, d_smooth_loss, d_total_loss = \
                 self.discriminator_loss(real_output, fake_output, smooth_out)
 
-            c_loss = self.content_lambda * self.content_loss(source_images, generated_images)
+            vgg_generated_images = self.pass_to_vgg(generated_images)
+            c_loss = self.content_lambda * self.content_loss(
+                self.pass_to_vgg(source_images), vgg_generated_images)
+            s_loss = self.style_lambda * self.style_loss(
+                self.pass_to_vgg(target_images[:vgg_generated_images.shape[0]]),
+                vgg_generated_images)
             g_adv_loss = self.g_adv_lambda * self.generator_adversarial_loss(fake_output)
-            g_total_loss = c_loss + g_adv_loss
+            g_total_loss = c_loss + g_adv_loss + s_loss
 
         d_grads = d_tape.gradient(d_total_loss, discriminator.trainable_variables)
         g_grads = g_tape.gradient(g_total_loss, generator.trainable_variables)
@@ -286,6 +308,7 @@ class Trainer:
         self.g_total_loss_metric(g_total_loss)
         self.g_adv_loss_metric(g_adv_loss)
         self.content_loss_metric(c_loss)
+        self.style_loss_metric(s_loss)
         self.d_total_loss_metric(d_total_loss)
         self.d_real_loss_metric(d_real_loss)
         self.d_fake_loss_metric(d_fake_loss)
@@ -380,6 +403,8 @@ class Trainer:
                 checkpoint.save(file_prefix=self.pretrain_checkpoint_prefix)
 
     def train_gan(self):
+        self.logger.info("Setting up summary writer to record progress on TensorBoard...")
+        summary_writer = tf.summary.create_file_writer(self.log_dir)
         self.logger.info(
             f"Starting adversarial training with {self.epochs} epochs, "
             f"batch size: {self.batch_size}..."
@@ -472,8 +497,6 @@ class Trainer:
             real_batches = self.get_sample_images(ds_source)
         else:
             self.logger.info("Proceeding training without sample images...")
-        self.logger.info("Setting up summary writer to record progress on TensorBoard...")
-        summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir))
 
         self.logger.info("Starting training loop...")
 
