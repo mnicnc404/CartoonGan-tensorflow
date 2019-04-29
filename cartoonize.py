@@ -8,13 +8,11 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime
-from style_transfer.comixgan import comixgan
 from style_transfer.cartoongan import cartoongan
 
 
 CARTOONGAN_STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
-COMIXGAN_STYLES = ["comic", "comic2"]
-STYLES = CARTOONGAN_STYLES + COMIXGAN_STYLES
+STYLES = CARTOONGAN_STYLES
 VALID_EXTENSIONS = ['jpg', 'png', 'gif', 'JPG']
 
 # TODO: mp4 processing
@@ -92,12 +90,7 @@ def pre_processing(image_path, style, expand_dim=True):
     input_image = np.asarray(input_image)
     input_image = input_image.astype(np.float32)
 
-    if style in COMIXGAN_STYLES:
-        input_image = (input_image / 255 * 2) - 1
-    elif style in CARTOONGAN_STYLES:
-        input_image = input_image[:, :, [2, 1, 0]]
-    else:
-        logger.error("No pre-processing!")
+    input_image = input_image[:, :, [2, 1, 0]]
 
     if expand_dim:
         input_image = np.expand_dims(input_image, axis=0)
@@ -108,15 +101,9 @@ def post_processing(transformed_image, style):
     if not type(transformed_image) == np.ndarray:
         transformed_image = transformed_image.numpy()
     transformed_image = transformed_image[0]
-
-    if style in COMIXGAN_STYLES:
-        transformed_image = ((transformed_image + 1) / 2) * 255
-    elif style in CARTOONGAN_STYLES:
-        transformed_image = transformed_image[:, :, [2, 1, 0]]
-        transformed_image = transformed_image * 0.5 + 0.5
-        transformed_image = transformed_image * 255
-    else:
-        logger.error("No post-processing!")
+    transformed_image = transformed_image[:, :, [2, 1, 0]]
+    transformed_image = transformed_image * 0.5 + 0.5
+    transformed_image = transformed_image * 255
     return transformed_image
 
 
@@ -307,12 +294,7 @@ def main():
 
     models = list()
     for style in styles:
-        if style in COMIXGAN_STYLES:
-            models.append(comixgan.load_model(style))
-        elif style in CARTOONGAN_STYLES:
-            models.append(cartoongan.load_model(style))
-        else:
-            logger.error(f"Non recognizable style: {style}")
+        models.append(cartoongan.load_model(style))
 
     logger.info(f"Cartoonizing images using {', '.join(styles)} style...")
 
