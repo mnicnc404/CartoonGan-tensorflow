@@ -184,6 +184,7 @@ class Trainer:
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
         imwrite(os.path.join(self.result_dir, image_name), out_arrs)
+        return out_arrs
 
     def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
         is_train = _type == 'train'
@@ -225,11 +226,14 @@ class Trainer:
             for i, batch in enumerate(real_batches):
                 np.save(os.path.join(sample_image_dir, f"sample_batch_{i}.npy"), batch.numpy())
 
-            self._save_generated_images(
+            img = np.expand_dims(self._save_generated_images(
                 ((np.clip(np.concatenate(
                     real_batches, axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
-                image_name="sample_images.png",
+                image_name="sample_images.png"),
+                0,
             )
+            with tf.summary.create_file_writer(self.log_dir).as_default():
+                tf.summary.image("real_sample", img, step=0)
         else:
             self.logger.debug("Existing sample images found, load them directly.")
             real_batches = [np.load(f) for f in batch_files]
@@ -381,21 +385,23 @@ class Trainer:
 
                 if step % self.pretrain_reporting_steps == 0:
 
-                    if not self.disable_sampling:
-                        fake_batches = [generator(real_b) for real_b in real_batches]
-                        self._save_generated_images(
-                            ((np.clip(np.concatenate(
-                                fake_batches,
-                                axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
-                            image_name=(f"pretrain_generated_images_at_epoch_{epoch_idx}"
-                                        f"_step_{step}.png"),
-                        )
-
                     global_step = (epoch_idx - 1) * steps_per_epoch + step
                     with summary_writer.as_default():
                         tf.summary.scalar('content_loss',
                                           self.content_loss_metric.result(),
                                           step=global_step)
+                        if not self.disable_sampling:
+                            fake_batches = [generator(real_b) for real_b in real_batches]
+                            img = np.expand_dims(self._save_generated_images(
+                                ((np.clip(np.concatenate(
+                                    fake_batches,
+                                    axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
+                                image_name=(f"pretrain_generated_images_at_epoch_{epoch_idx}"
+                                            f"_step_{step}.png")),
+                                0,
+                            )
+                            tf.summary.image('pretrain_generated_images', img, step=global_step)
+
                     self.content_loss_metric.reset_states()
 
             if epoch % self.pretrain_saving_epochs == 0:
@@ -516,21 +522,23 @@ class Trainer:
 
                 if step % self.reporting_steps == 0:
 
-                    if not self.disable_sampling:
-                        fake_batches = [g(real_b) for real_b in real_batches]
-                        self._save_generated_images(
-                            ((np.clip(np.concatenate(
-                                fake_batches,
-                                axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
-                            image_name=("generated_images_at_epoch_"
-                                        f"{epoch_idx}_step_{step}.png"),
-                        )
-
                     global_step = (epoch_idx - 1) * steps_per_epoch + step
                     with summary_writer.as_default():
                         for metric, name in self.metric_and_names:
                             tf.summary.scalar(name, metric.result(), step=global_step)
                             metric.reset_states()
+                        if not self.disable_sampling:
+                            fake_batches = [g(real_b) for real_b in real_batches]
+                            img = np.expand_dims(self._save_generated_images(
+                                ((np.clip(np.concatenate(
+                                    fake_batches,
+                                    axis=0), -1, 1) + 1) * 127.5).astype(np.uint8),
+                                image_name=("generated_images_at_epoch_"
+                                            f"{epoch_idx}_step_{step}.png")),
+                                0,
+                            )
+                            tf.summary.image('train_generated_images', img, step=global_step)
+
                     self.logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
                                       f"{global_step * self.batch_size} images processed.")
 
