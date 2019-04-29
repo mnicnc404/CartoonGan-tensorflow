@@ -8,7 +8,7 @@ from layers import FlatConv, DownSampleConv, ResBlock, UpSampleConv
 class Generator(Model):
     def __init__(self,
                  norm_type="instance",
-                 pad_type="reflect",
+                 pad_type="constant",
                  base_filters=64,
                  num_resblocks=8):
         super(Generator, self).__init__(name="Generator")
@@ -44,6 +44,8 @@ class Generator(Model):
             self.final_pad = ReflectionPadding2D((3, 3))
         elif self.pad_type == "constant":
             self.final_pad = ZeroPadding2D(3)
+        else:
+            raise ValueError(f"pad_type not recognized {self.pad_type}")
 
         self.final_conv = Conv2D(3, 7)
         self.final_act = Activation("tanh")

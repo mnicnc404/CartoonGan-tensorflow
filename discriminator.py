@@ -21,6 +21,8 @@ class Discriminator(Model):
             self.flat_pad = ReflectionPadding2D()
         elif self.pad_type == "constant":
             self.flat_pad = ZeroPadding2D()
+        else:
+            raise ValueError(f"pad_type not recognized {self.pad_type}")
 
         self.flat_conv = Conv2D(self.base_filters, 3)
         self.flat_lru = LeakyReLU(self.lrelu_alpha)
