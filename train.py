@@ -329,7 +329,7 @@ class Trainer:
         self.logger.info("Setting up optimizer to update generator's parameters...")
         optimizer = tf.keras.optimizers.Adam(
             learning_rate=self.pretrain_learning_rate,
-            beta1=0.5)
+            beta_1=0.5)
 
         self.logger.info(f"Try restoring checkpoint: `{self.pretrain_checkpoint_prefix}`...")
         try:
