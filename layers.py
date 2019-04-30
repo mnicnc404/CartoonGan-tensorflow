@@ -53,7 +53,7 @@ class FlatConv(Model):
         super(FlatConv, self).build(input_shape)
 
     def call(self, x, training=False):
-        return self.model(x)
+        return self.model(x, training=training)
 
 
 class DownSampleConv(Model):
@@ -90,7 +90,7 @@ class DownSampleConv(Model):
         super(DownSampleConv, self).build(input_shape)
 
     def call(self, x, training=False):
-        return self.model(x)
+        return self.model(x, training=training)
 
 
 class ResBlock(Model):
@@ -129,7 +129,7 @@ class ResBlock(Model):
         super(ResBlock, self).build(input_shape)
 
     def call(self, x, training=False):
-        return self.add([self.model(x), x])
+        return self.add([self.model(x, training=training), x])
 
 
 class UpSampleConv(Model):
@@ -158,7 +158,7 @@ class UpSampleConv(Model):
         cur_h = x.shape[1] // 2 * 4
         cur_w = x.shape[2] // 2 * 4
         x = tf.image.resize(x, (cur_h, cur_w))
-        return self.model(x)
+        return self.model(x, training=training)
 
 
 class StridedConv(Model):
@@ -195,4 +195,4 @@ class StridedConv(Model):
         super(StridedConv, self).build(input_shape)
 
     def call(self, x, training=False):
-        return self.model(x)
+        return self.model(x, training=training)
