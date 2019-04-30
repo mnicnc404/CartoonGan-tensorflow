@@ -1,8 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Layer, InputSpec
-from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
-    BatchNormalization, ReLU, LeakyReLU, ZeroPadding2D, Add
+from tensorflow.keras.layers import Conv2D, BatchNormalization, Add
+from tensorflow.keras.layers import ReLU, LeakyReLU, ZeroPadding2D
 from keras_contrib.layers import InstanceNormalization
 
 
