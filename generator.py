@@ -47,15 +47,11 @@ class Generator(Model):
                                pad_type=pad_type,
                                light=light)
 
-        if light:
-            self.final_conv = LightConv(
-                3, 3, end_ksize, 1, norm_type, pad_type)
-        else:
-            end_padding = (end_ksize - 1) // 2
-            end_padding = (end_padding, end_padding)
-            self.final_conv = tf.keras.models.Sequential([
-                get_padding(pad_type, end_padding),
-                Conv2D(3, end_ksize)])
+        end_padding = (end_ksize - 1) // 2
+        end_padding = (end_padding, end_padding)
+        self.final_conv = tf.keras.models.Sequential([
+            get_padding(pad_type, end_padding),
+            Conv2D(3, end_ksize)])
         self.final_act = Activation("tanh")
 
     def build(self, input_shape):
