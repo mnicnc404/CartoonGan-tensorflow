@@ -13,44 +13,40 @@ class Generator(Model):
                  num_resblocks=8,
                  light=False):
         super(Generator, self).__init__(name="Generator")
-        self.norm_type = norm_type
-        self.pad_type = pad_type
-        self.base_filters = base_filters
-        self.num_resblocks = num_resblocks
         first_ksize = 3 if light else 7
         first_pad = (first_ksize - 1) // 2
-        self.flat_conv1 = FlatConv(filters=self.base_filters,
+        downconv = DownSampleConv
+        resblock = ResBlock
+        upconv = UpSampleConv
+        self.flat_conv1 = FlatConv(filters=base_filters,
                                    kernel_size=first_ksize,
-                                   padding=(first_pad, first_pad),
-                                   norm_type=self.norm_type,
-                                   pad_type=self.pad_type)
-        self.down_conv1 = DownSampleConv(filters=self.base_filters * 2,
-                                         kernel_size=3,
-                                         norm_type=self.norm_type,
-                                         pad_type=self.pad_type)
-        self.down_conv2 = DownSampleConv(filters=self.base_filters * 4,
-                                         kernel_size=3,
-                                         norm_type=self.norm_type,
-                                         pad_type=self.pad_type)
-        self.residual_blocks = [
-            ResBlock(self.base_filters * 4, 3)
-            for _ in range(self.num_resblocks)]
+                                   norm_type=norm_type,
+                                   pad_type=pad_type)
+        self.down_conv1 = downconv(filters=base_filters * 2,
+                                   kernel_size=3,
+                                   norm_type=norm_type,
+                                   pad_type=pad_type)
+        self.down_conv2 = downconv(filters=base_filters * 4,
+                                   kernel_size=3,
+                                   norm_type=norm_type,
+                                   pad_type=pad_type)
+        self.residual_blocks = tf.keras.models.Sequential([
+            resblock(base_filters * 4, 3) for _ in range(num_resblocks)])
+        self.up_conv1 = upconv(filters=base_filters * 2,
+                               kernel_size=3,
+                               norm_type=norm_type)
+        self.up_conv2 = upconv(filters=base_filters,
+                               kernel_size=3,
+                               norm_type=norm_type)
 
-        self.up_conv1 = UpSampleConv(filters=self.base_filters * 2,
-                                     kernel_size=3,
-                                     norm_type=self.norm_type)
-        self.up_conv2 = UpSampleConv(filters=self.base_filters,
-                                     kernel_size=3,
-                                     norm_type=self.norm_type)
-
-        if self.pad_type == "reflect":
+        if pad_type == "reflect":
             self.final_pad = ReflectionPadding2D((3, 3))
-        elif self.pad_type == "constant":
+        elif pad_type == "constant":
             self.final_pad = ZeroPadding2D(3)
         else:
-            raise ValueError(f"pad_type not recognized {self.pad_type}")
+            raise ValueError(f"pad_type not recognized {pad_type}")
 
-        self.final_conv = Conv2D(3, 7)
+        self.final_conv = Conv2D(3, 3 if light else 7)
         self.final_act = Activation("tanh")
 
     def build(self, input_shape):
@@ -60,10 +56,9 @@ class Generator(Model):
         x = self.flat_conv1(x, training=training)
         x = self.down_conv1(x, training=training)
         x = self.down_conv2(x, training=training)
-        for block in self.residual_blocks:
-            x = block(x)
-        x = self.up_conv1(x)
-        x = self.up_conv2(x)
+        x = self.residual_blocks(x, training=training)
+        x = self.up_conv1(x, training=training)
+        x = self.up_conv2(x, training=training)
         x = self.final_pad(x)
         x = self.final_conv(x)
         x = self.final_act(x)

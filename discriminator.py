@@ -12,36 +12,31 @@ class Discriminator(Model):
                  pad_type="reflect",
                  norm_type="batch"):
         super(Discriminator, self).__init__(name="Discriminator")
-        self.base_filters = base_filters
-        self.lrelu_alpha = lrelu_alpha
-        self.pad_type = pad_type
-        self.norm_type = norm_type
-
-        if self.pad_type == "reflect":
+        if pad_type == "reflect":
             self.flat_pad = ReflectionPadding2D()
-        elif self.pad_type == "constant":
+        elif pad_type == "constant":
             self.flat_pad = ZeroPadding2D()
         else:
-            raise ValueError(f"pad_type not recognized {self.pad_type}")
+            raise ValueError(f"pad_type not recognized {pad_type}")
 
-        self.flat_conv = Conv2D(self.base_filters, 3)
-        self.flat_lru = LeakyReLU(self.lrelu_alpha)
-        self.strided_conv1 = StridedConv(self.base_filters * 2,
-                                         self.lrelu_alpha,
-                                         self.pad_type,
-                                         self.norm_type)
-        self.strided_conv2 = StridedConv(self.base_filters * 4,
-                                         self.lrelu_alpha,
-                                         self.pad_type,
-                                         self.norm_type)
-        self.conv2 = Conv2D(self.base_filters * 8, 3)
+        self.flat_conv = Conv2D(base_filters, 3)
+        self.flat_lru = LeakyReLU(lrelu_alpha)
+        self.strided_conv1 = StridedConv(base_filters * 2,
+                                         lrelu_alpha,
+                                         pad_type,
+                                         norm_type)
+        self.strided_conv2 = StridedConv(base_filters * 4,
+                                         lrelu_alpha,
+                                         pad_type,
+                                         norm_type)
+        self.conv2 = Conv2D(base_filters * 8, 3)
 
-        if self.norm_type == "instance":
+        if norm_type == "instance":
             self.norm = InstanceNormalization()
-        elif self.norm_type == "batch":
+        elif norm_type == "batch":
             self.norm = BatchNormalization()
 
-        self.lrelu = LeakyReLU(self.lrelu_alpha)
+        self.lrelu = LeakyReLU(lrelu_alpha)
 
         self.final_conv = Conv2D(1, 3)
 
