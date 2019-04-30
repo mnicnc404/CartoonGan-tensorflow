@@ -48,7 +48,7 @@ class LightConv(Model):
                  norm_type="instance",
                  pad_type="constant",
                  **kwargs):
-        super(LightConv, self).__init__(name="FlatConv")
+        super(LightConv, self).__init__(name="LightConv")
         padding = (kernel_size - 1) // 2
         padding = (padding, padding)
         self.model = tf.keras.models.Sequential()
