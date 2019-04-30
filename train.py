@@ -23,6 +23,7 @@ class Trainer:
     def __init__(
         self,
         dataset_name,
+        light,
         source_domain,
         target_domain,
         gan_type,
@@ -61,6 +62,7 @@ class Trainer:
         self.debug = debug
         self.ascii = os.name == "nt"
         self.dataset_name = dataset_name
+        self.light = light
         self.source_domain = source_domain
         self.target_domain = target_domain
         self.gan_type = gan_type
@@ -329,7 +331,7 @@ class Trainer:
                                                     batch_size=self.batch_size)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        generator = Generator(base_filters=2 if self.debug else 64)
+        generator = Generator(base_filters=2 if self.debug else 64, light=self.light)
         generator(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
@@ -437,7 +439,7 @@ class Trainer:
         d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr, beta_1=.5)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        g = Generator(base_filters=2 if self.debug else 64)
+        g = Generator(base_filters=2 if self.debug else 64, light=self.light)
         g(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
@@ -480,7 +482,13 @@ class Trainer:
 
         self.logger.info(f"Initializing discriminator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        d = Discriminator(base_filters=2 if self.debug else 32)
+        if self.debug:
+            d_base_filters = 2
+        elif self.light:
+            d_base_filters = 8
+        else:
+            d_base_filters = 32
+        d = Discriminator(base_filters=d_base_filters)
         d(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
@@ -569,6 +577,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default="full",
                         choices=["full", "pretrain", "gan"])
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
+    parser.add_argument("--light", action="store_true")
     parser.add_argument("--input_size", type=int, default=256)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--sample_size", type=int, default=8)

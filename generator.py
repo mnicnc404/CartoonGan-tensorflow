@@ -1,52 +1,60 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Conv2D, Activation
-from layers import ZeroPadding2D, ReflectionPadding2D
-from layers import FlatConv, DownSampleConv, ResBlock, UpSampleConv
+from layers import FlatConv, ConvBlock, ResBlock, UpSampleConv
+from layers import get_padding, LightConv
 
 
 class Generator(Model):
     def __init__(self,
                  norm_type="instance",
-                 pad_type="reflect",
+                 pad_type="constant",
                  base_filters=64,
                  num_resblocks=8,
                  light=False):
         super(Generator, self).__init__(name="Generator")
-        first_ksize = 3 if light else 7
-        first_pad = (first_ksize - 1) // 2
-        downconv = DownSampleConv
+        end_ksize = 3 if light else 7
+        downconv = LightConv if light else ConvBlock
         resblock = ResBlock
         upconv = UpSampleConv
         self.flat_conv1 = FlatConv(filters=base_filters,
-                                   kernel_size=first_ksize,
+                                   kernel_size=end_ksize,
                                    norm_type=norm_type,
                                    pad_type=pad_type)
-        self.down_conv1 = downconv(filters=base_filters * 2,
+        self.down_conv1 = downconv(mid_filters=base_filters,
+                                   filters=base_filters * 2,
                                    kernel_size=3,
+                                   stride=2,
                                    norm_type=norm_type,
                                    pad_type=pad_type)
-        self.down_conv2 = downconv(filters=base_filters * 4,
+        self.down_conv2 = downconv(mid_filters=base_filters,
+                                   filters=base_filters * 4,
                                    kernel_size=3,
+                                   stride=2,
                                    norm_type=norm_type,
                                    pad_type=pad_type)
         self.residual_blocks = tf.keras.models.Sequential([
-            resblock(base_filters * 4, 3) for _ in range(num_resblocks)])
+            resblock(base_filters * 4, 3, light=light) for _ in range(num_resblocks)])
         self.up_conv1 = upconv(filters=base_filters * 2,
                                kernel_size=3,
-                               norm_type=norm_type)
+                               norm_type=norm_type,
+                               pad_type=pad_type,
+                               light=light)
         self.up_conv2 = upconv(filters=base_filters,
                                kernel_size=3,
-                               norm_type=norm_type)
+                               norm_type=norm_type,
+                               pad_type=pad_type,
+                               light=light)
 
-        if pad_type == "reflect":
-            self.final_pad = ReflectionPadding2D((3, 3))
-        elif pad_type == "constant":
-            self.final_pad = ZeroPadding2D(3)
+        if light:
+            self.final_conv = LightConv(
+                3, 3, end_ksize, 1, norm_type, pad_type)
         else:
-            raise ValueError(f"pad_type not recognized {pad_type}")
-
-        self.final_conv = Conv2D(3, 3 if light else 7)
+            end_padding = (end_ksize - 1) // 2
+            end_padding = (end_padding, end_padding)
+            self.final_conv = tf.keras.models.Sequential([
+                get_padding(pad_type, end_padding),
+                Conv2D(3, end_ksize)])
         self.final_act = Activation("tanh")
 
     def build(self, input_shape):
@@ -59,7 +67,6 @@ class Generator(Model):
         x = self.residual_blocks(x, training=training)
         x = self.up_conv1(x, training=training)
         x = self.up_conv2(x, training=training)
-        x = self.final_pad(x)
         x = self.final_conv(x)
         x = self.final_act(x)
         return x
@@ -77,7 +84,7 @@ if __name__ == "__main__":
 
     custom_layers = [
         FlatConv(f, k),
-        DownSampleConv(f, k),
+        ConvBlock(f, k),
         ResBlock(f, k),
         UpSampleConv(f, k)
     ]

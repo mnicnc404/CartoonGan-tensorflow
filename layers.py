@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Layer, InputSpec
+from tensorflow.keras.layers import Layer, InputSpec, DepthwiseConv2D
 from tensorflow.keras.layers import Conv2D, BatchNormalization, Add
 from tensorflow.keras.layers import ReLU, LeakyReLU, ZeroPadding2D
 from keras_contrib.layers import InstanceNormalization
@@ -41,11 +41,31 @@ def get_norm(norm_type):
 
 class LightConv(Model):
     def __init__(self,
-                 in_filters,
+                 mid_filters,
                  filters,
                  kernel_size,
+                 stride,
+                 norm_type="instance",
+                 pad_type="constant",
                  **kwargs):
-        pass
+        super(LightConv, self).__init__(name="FlatConv")
+        padding = (kernel_size - 1) // 2
+        padding = (padding, padding)
+        self.model = tf.keras.models.Sequential()
+        self.model.add(Conv2D(mid_filters, 1, use_bias=False))
+        self.model.add(get_norm(norm_type))
+        self.model.add(ReLU())
+        self.model.add(get_padding(pad_type, padding))
+        self.model.add(DepthwiseConv2D(3, stride, use_bias=False))
+        self.model.add(get_norm(norm_type))
+        self.model.add(ReLU())
+        self.model.add(Conv2D(filters, 1))
+
+    def build(self, input_shape):
+        super(LightConv, self).build(input_shape)
+
+    def call(self, x, training=False):
+        return self.model(x, training=training)
 
 
 class FlatConv(Model):
@@ -56,9 +76,9 @@ class FlatConv(Model):
                  pad_type="constant",
                  **kwargs):
         super(FlatConv, self).__init__(name="FlatConv")
-        self.model = tf.keras.models.Sequential()
         padding = (kernel_size - 1) // 2
         padding = (padding, padding)
+        self.model = tf.keras.models.Sequential()
         self.model.add(get_padding(pad_type, padding))
         self.model.add(Conv2D(filters, kernel_size))
         self.model.add(get_norm(norm_type))
@@ -71,27 +91,28 @@ class FlatConv(Model):
         return self.model(x, training=training)
 
 
-class DownSampleConv(Model):
+class ConvBlock(Model):
     def __init__(self,
                  filters,
                  kernel_size,
+                 stride=1,
                  norm_type="instance",
                  pad_type="constant",
                  **kwargs):
-        super(DownSampleConv, self).__init__(name="DownSampleConv")
+        super(ConvBlock, self).__init__(name="ConvBlock")
         padding = (kernel_size - 1) // 2
         padding = (padding, padding)
 
         self.model = tf.keras.models.Sequential()
         self.model.add(get_padding(pad_type, padding))
-        self.model.add(Conv2D(filters, kernel_size, 2))
+        self.model.add(Conv2D(filters, kernel_size, stride))
         self.model.add(get_padding(pad_type, padding))
         self.model.add(Conv2D(filters, kernel_size))
         self.model.add(get_norm(norm_type))
         self.model.add(ReLU())
 
     def build(self, input_shape):
-        super(DownSampleConv, self).build(input_shape)
+        super(ConvBlock, self).build(input_shape)
 
     def call(self, x, training=False):
         return self.model(x, training=training)
@@ -103,18 +124,23 @@ class ResBlock(Model):
                  kernel_size,
                  norm_type="instance",
                  pad_type="constant",
+                 light=False,
                  **kwargs):
         super(ResBlock, self).__init__(name="ResBlock")
         padding = (kernel_size - 1) // 2
         padding = (padding, padding)
         self.model = tf.keras.models.Sequential()
-        self.model.add(get_padding(pad_type, padding))
-        self.model.add(Conv2D(filters, kernel_size))
-        self.model.add(get_norm(norm_type))
-        self.model.add(ReLU())
-        self.model.add(get_padding(pad_type, padding))
-        self.model.add(Conv2D(filters, kernel_size))
-        self.model.add(get_norm(norm_type))
+        if light:
+            self.model.add(LightConv(
+                filters, filters, kernel_size, 1, norm_type, pad_type))
+        else:
+            self.model.add(get_padding(pad_type, padding))
+            self.model.add(Conv2D(filters, kernel_size))
+            self.model.add(get_norm(norm_type))
+            self.model.add(ReLU())
+            self.model.add(get_padding(pad_type, padding))
+            self.model.add(Conv2D(filters, kernel_size))
+            self.model.add(get_norm(norm_type))
         self.add = Add()
 
     def build(self, input_shape):
@@ -129,19 +155,22 @@ class UpSampleConv(Model):
                  filters,
                  kernel_size,
                  norm_type="instance",
+                 pad_type="constant",
+                 light=False,
                  **kwargs):
         super(UpSampleConv, self).__init__(name="UpSampleConv")
-        self.model = tf.keras.models.Sequential()
-        self.model.add(Conv2D(filters, kernel_size, padding="same"))
-        self.model.add(Conv2D(filters, kernel_size, padding="same"))
-        self.model.add(get_norm(norm_type))
-        self.model.add(ReLU())
+        if light:
+            self.model = LightConv(
+                filters, filters, kernel_size, 1, norm_type, pad_type)
+        else:
+            self.model = ConvBlock(
+                filters, kernel_size, 1, norm_type, pad_type)
 
     def build(self, input_shape):
         super(UpSampleConv, self).build(input_shape)
 
     def call(self, x, training=False):
-        cur_h = x.shape[1] // 2 * 4
+        cur_h = x.shape[1] // 2 * 4  # NOTE: avoid shape of odd nums
         cur_w = x.shape[2] // 2 * 4
         x = tf.image.resize(x, (cur_h, cur_w))
         return self.model(x, training=training)
