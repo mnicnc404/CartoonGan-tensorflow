@@ -8,17 +8,20 @@ from layers import FlatConv, DownSampleConv, ResBlock, UpSampleConv
 class Generator(Model):
     def __init__(self,
                  norm_type="instance",
-                 pad_type="constant",
+                 pad_type="reflect",
                  base_filters=64,
-                 num_resblocks=8):
+                 num_resblocks=8,
+                 light=False):
         super(Generator, self).__init__(name="Generator")
         self.norm_type = norm_type
         self.pad_type = pad_type
         self.base_filters = base_filters
         self.num_resblocks = num_resblocks
+        first_ksize = 3 if light else 7
+        first_pad = (first_ksize - 1) // 2
         self.flat_conv1 = FlatConv(filters=self.base_filters,
-                                   kernel_size=7,
-                                   padding=(3, 3),
+                                   kernel_size=first_ksize,
+                                   padding=(first_pad, first_pad),
                                    norm_type=self.norm_type,
                                    pad_type=self.pad_type)
         self.down_conv1 = DownSampleConv(filters=self.base_filters * 2,
