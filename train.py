@@ -71,8 +71,8 @@ class Trainer:
         self.batch_size = batch_size
         self.sample_size = sample_size
         self.reporting_steps = reporting_steps
-        self.content_lambda = content_lambda
-        self.style_lambda = style_lambda
+        self.content_lambda = float(content_lambda)
+        self.style_lambda = float(style_lambda)
         self.g_adv_lambda = g_adv_lambda
         self.d_adv_lambda = d_adv_lambda
         self.generator_lr = generator_lr
@@ -132,8 +132,10 @@ class Trainer:
 
         self.g_total_loss_metric = tf.keras.metrics.Mean("g_total_loss", dtype=tf.float32)
         self.g_adv_loss_metric = tf.keras.metrics.Mean("g_adversarial_loss", dtype=tf.float32)
-        self.content_loss_metric = tf.keras.metrics.Mean("content_loss", dtype=tf.float32)
-        self.style_loss_metric = tf.keras.metrics.Mean("style_loss", dtype=tf.float32)
+        if self.content_lambda != 0.:
+            self.content_loss_metric = tf.keras.metrics.Mean("content_loss", dtype=tf.float32)
+        if self.style_lambda != 0.:
+            self.style_loss_metric = tf.keras.metrics.Mean("style_loss", dtype=tf.float32)
         self.d_total_loss_metric = tf.keras.metrics.Mean("d_total_loss", dtype=tf.float32)
         self.d_real_loss_metric = tf.keras.metrics.Mean("d_real_loss", dtype=tf.float32)
         self.d_fake_loss_metric = tf.keras.metrics.Mean("d_fake_loss", dtype=tf.float32)
@@ -142,13 +144,15 @@ class Trainer:
         self.metric_and_names = [
             (self.g_total_loss_metric, "g_total_loss"),
             (self.g_adv_loss_metric, "g_adversarial_loss"),
-            (self.content_loss_metric, "content_loss"),
-            (self.style_loss_metric, "style_loss"),
             (self.d_total_loss_metric, "d_total_loss"),
             (self.d_real_loss_metric, "d_real_loss"),
             (self.d_fake_loss_metric, "d_fake_loss"),
             (self.d_smooth_loss_metric, "d_smooth_loss"),
         ]
+        if self.content_lambda != 0.:
+            self.metric_and_names.append((self.content_loss_metric, "content_loss"))
+        if self.style_lambda != 0.:
+            self.metric_and_names.append((self.style_loss_metric, "style_loss"))
 
         self.logger.info("Setting up checkpoint paths...")
         self.pretrain_checkpoint_prefix = os.path.join(
@@ -296,14 +300,19 @@ class Trainer:
             d_real_loss, d_fake_loss, d_smooth_loss, d_total_loss = \
                 self.discriminator_loss(real_output, fake_output, smooth_out)
 
-            vgg_generated_images = self.pass_to_vgg(generated_images)
-            c_loss = self.content_lambda * self.content_loss(
-                self.pass_to_vgg(source_images), vgg_generated_images)
-            s_loss = self.style_lambda * self.style_loss(
-                self.pass_to_vgg(target_images[:vgg_generated_images.shape[0]]),
-                vgg_generated_images)
             g_adv_loss = self.g_adv_lambda * self.generator_adversarial_loss(fake_output)
-            g_total_loss = c_loss + g_adv_loss + s_loss
+            g_total_loss = g_adv_loss
+            if self.content_lambda != 0. or self.style_lambda != 0.:
+                vgg_generated_images = self.pass_to_vgg(generated_images)
+                if self.content_lambda != 0.:
+                    c_loss = self.content_lambda * self.content_loss(
+                        self.pass_to_vgg(source_images), vgg_generated_images)
+                    g_total_loss = g_total_loss + c_loss
+                if self.style_lambda != 0.:
+                    s_loss = self.style_lambda * self.style_loss(
+                        self.pass_to_vgg(target_images[:vgg_generated_images.shape[0]]),
+                        vgg_generated_images)
+                    g_total_loss = g_total_loss + s_loss
 
         d_grads = d_tape.gradient(d_total_loss, discriminator.trainable_variables)
         g_grads = g_tape.gradient(g_total_loss, generator.trainable_variables)
@@ -313,8 +322,10 @@ class Trainer:
 
         self.g_total_loss_metric(g_total_loss)
         self.g_adv_loss_metric(g_adv_loss)
-        self.content_loss_metric(c_loss)
-        self.style_loss_metric(s_loss)
+        if self.content_lambda != 0.:
+            self.content_loss_metric(c_loss)
+        if self.style_lambda != 0.:
+            self.style_loss_metric(s_loss)
         self.d_total_loss_metric(d_total_loss)
         self.d_real_loss_metric(d_real_loss)
         self.d_fake_loss_metric(d_fake_loss)
