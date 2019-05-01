@@ -132,7 +132,7 @@ In this section, we explain how you can train CartoonGAN on your own datasets.
 
 ### Setup Environment
 
-Assume you already followed the steps in [previous section](setup), just install some extra packages for training:
+Assume you already followed the steps in [previous section](#setup), just install some extra packages for training:
 
 ```commandline
 pip install -r requirements.txt
