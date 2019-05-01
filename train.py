@@ -496,7 +496,7 @@ class Trainer:
         if self.debug:
             d_base_filters = 2
         elif self.light:
-            d_base_filters = 8
+            d_base_filters = 16
         else:
             d_base_filters = 32
         d = Discriminator(base_filters=d_base_filters)

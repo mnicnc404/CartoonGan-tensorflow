@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Conv2D, Activation
 from layers import FlatConv, ConvBlock, ResBlock, UpSampleConv
-from layers import get_padding, LightConv
+from layers import get_padding, DownShuffleUnitV2, BasicShuffleUnitV2
 
 
 class Generator(Model):
@@ -14,8 +14,9 @@ class Generator(Model):
                  light=False):
         super(Generator, self).__init__(name="Generator")
         end_ksize = 3 if light else 7
-        downconv = LightConv if light else ConvBlock
-        resblock = ResBlock
+        self.light = light
+        downconv = DownShuffleUnitV2 if light else ConvBlock
+        resblock = BasicShuffleUnitV2 if light else ResBlock
         upconv = UpSampleConv
         self.flat_conv1 = FlatConv(filters=base_filters,
                                    kernel_size=end_ksize,
@@ -34,7 +35,9 @@ class Generator(Model):
                                    norm_type=norm_type,
                                    pad_type=pad_type)
         self.residual_blocks = tf.keras.models.Sequential([
-            resblock(base_filters * 4, 3, light=light) for _ in range(num_resblocks)])
+            resblock(
+                filters=base_filters * 4,
+                kernel_size=3) for _ in range(num_resblocks)])
         self.up_conv1 = upconv(filters=base_filters * 2,
                                kernel_size=3,
                                norm_type=norm_type,
@@ -60,7 +63,11 @@ class Generator(Model):
         x = self.flat_conv1(x, training=training)
         x = self.down_conv1(x, training=training)
         x = self.down_conv2(x, training=training)
+        if self.light:
+            x_prev = x
         x = self.residual_blocks(x, training=training)
+        if self.light:
+            x = x - x_prev
         x = self.up_conv1(x, training=training)
         x = self.up_conv2(x, training=training)
         x = self.final_conv(x)
