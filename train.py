@@ -1,6 +1,7 @@
 import os
 import gc
 from glob import glob
+from itertools import product
 
 from imageio import imwrite
 import tensorflow as tf
@@ -171,32 +172,17 @@ class Trainer:
     def _save_generated_images(self, batch_x, image_name, nrow=2, ncol=4):
         # NOTE: 0 <= batch_x <= 1, float32, numpy.ndarray
         # NOTE: not doing inplace multiplication on batch_x
+        if not isinstance(batch_x, np.ndarray):
+            batch_x = batch_x.numpy()
         n, h, w, c = batch_x.shape
-        real_nrow = n // ncol
-        remainder = n % ncol
-        if n >= nrow * ncol:
-            remainder = 0
-        else:
-            if remainder != 0:
-                real_nrow += 1
-            remainder = ncol - remainder
-        real_nrow = min(real_nrow, nrow)
-        out_list = []
-        for i in range(real_nrow):
-            # cur_row = tf.concat(batch_x[(ncol * i):(ncol * (i + 1))], 1)
-            # NOTE: only available in tf >= 2.0 but seems not a good practice though
-            cur_row = tf.concat([batch_x[j] for j in range(ncol * i, ncol * (i + 1))], 1)
-            if i == real_nrow - 1 and remainder != 0:
-                cur_row = tf.concat((cur_row, tf.zeros(
-                    [h, remainder * w, c], dtype=tf.uint8)), 1)
-            out_list.append(cur_row)
-        out_arrs = tf.concat(out_list, 0)
-        del out_list
+        out_arr = np.zeros([h * nrow, w * ncol, 3], dtype=np.uint8)
+        for (i, j), k in zip(product(range(nrow), range(ncol)), range(n)):
+            out_arr[(h * i):(h * (i+1)), (w * j):(w * (j+1))] = batch_x[k]
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
-        imwrite(os.path.join(self.result_dir, image_name), out_arrs.numpy())
+        imwrite(os.path.join(self.result_dir, image_name), out_arr)
         gc.collect()
-        return out_arrs
+        return out_arr
 
     def get_dataset(self, dataset_name, domain, _type, batch_size,
                     repeat=False, shuffle=True):
@@ -371,21 +357,22 @@ class Trainer:
             while real_batch.shape[0] < self.sample_size:
                 real_batch = tf.concat((real_batch, next(iter(dataset))), 0)
             real_batch = real_batch[:self.sample_size]
-            val_real_batch = next(iter(val_draw))
+            valiter = iter(val_draw)
+            val_real_batch = next(valiter)
             with summary_writer.as_default():
-                img = tf.expand_dims(self._save_generated_images(
+                img = np.expand_dims(self._save_generated_images(
                     tf.cast((real_batch + 1) * 127.5, tf.uint8),
                     image_name="pretrain_sample_images.png"),
                     0,
                 )
                 tf.summary.image("pretrain_sample_images", img, step=0)
-                img = tf.expand_dims(self._save_generated_images(
+                img = np.expand_dims(self._save_generated_images(
                     tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
                     image_name="pretrain_val_sample_images.png"),
                     0,
                 )
                 tf.summary.image("pretrain_val_sample_images", img, step=0)
-            del val_draw
+            del val_draw, dataiter, valiter
             gc.collect()
         else:
             self.logger.info("Proceeding pretraining without sample images...")
@@ -412,7 +399,7 @@ class Trainer:
                         if not self.disable_sampling:
                             fake_batch = tf.cast(
                                 (generator(real_batch, training=False) + 1) * 127.5, tf.uint8)
-                            img = tf.expand_dims(self._save_generated_images(
+                            img = np.expand_dims(self._save_generated_images(
                                     fake_batch,
                                     image_name=(f"pretrain_generated_images_at_epoch_{epoch_idx}"
                                                 f"_step_{step}.png")),
@@ -424,7 +411,7 @@ class Trainer:
                 if not self.disable_sampling:
                     val_fake_batch = tf.cast(
                         (generator(val_real_batch, training=False) + 1) * 127.5, tf.uint8)
-                    img = tf.expand_dims(self._save_generated_images(
+                    img = np.expand_dims(self._save_generated_images(
                             val_fake_batch,
                             image_name=("pretrain_val_generated_images_at_epoch_"
                                         f"{epoch_idx}_step_{step}.png")),
@@ -544,21 +531,22 @@ class Trainer:
             while real_batch.shape[0] < self.sample_size:
                 real_batch = tf.concat((real_batch, next(iter(ds_source))), 0)
             real_batch = real_batch[:self.sample_size]
-            val_real_batch = next(iter(val_draw))
+            valiter = iter(val_draw)
+            val_real_batch = next(valiter)
             with summary_writer.as_default():
-                img = tf.expand_dims(self._save_generated_images(
+                img = np.expand_dims(self._save_generated_images(
                     tf.cast((real_batch + 1) * 127.5, tf.uint8),
                     image_name="gan_sample_images.png"),
                     0,
                 )
                 tf.summary.image("gan_sample_images", img, step=0)
-                img = tf.expand_dims(self._save_generated_images(
+                img = np.expand_dims(self._save_generated_images(
                     tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
                     image_name="gan_val_sample_images.png"),
                     0,
                 )
                 tf.summary.image("gan_val_sample_images", img, step=0)
-            del val_draw
+            del val_draw, dataiter, valiter
             gc.collect()
         else:
             self.logger.info("Proceeding training without sample images...")
@@ -589,7 +577,7 @@ class Trainer:
                         if not self.disable_sampling:
                             fake_batch = tf.cast(
                                 (g(real_batch, training=False) + 1) * 127.5, tf.uint8)
-                            img = tf.expand_dims(self._save_generated_images(
+                            img = np.expand_dims(self._save_generated_images(
                                     fake_batch,
                                     image_name=("gan_generated_images_at_epoch_"
                                                 f"{epoch_idx}_step_{step}.png")),
@@ -604,7 +592,7 @@ class Trainer:
                 if not self.disable_sampling:
                     val_fake_batch = tf.cast(
                         (g(val_real_batch, training=False) + 1) * 127.5, tf.uint8)
-                    img = tf.expand_dims(self._save_generated_images(
+                    img = np.expand_dims(self._save_generated_images(
                             val_fake_batch,
                             image_name=("gan_val_generated_images_at_epoch_"
                                         f"{epoch_idx}_step_{step}.png")),
