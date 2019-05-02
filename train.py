@@ -184,34 +184,35 @@ class Trainer:
         gc.collect()
         return out_arr
 
-    def get_dataset(self, dataset_name, domain, _type, batch_size,
-                    repeat=False, shuffle=True):
-        is_train = _type == 'train'
+    @tf.function
+    def image_processing(self, filename, is_train=True):
+        x = tf.io.read_file(filename)
+        x = tf.image.decode_jpeg(x, channels=3)
+        if is_train:
+            sizes = tf.cast(
+                self.input_size * tf.random.uniform([2], 0.9, 1.1), tf.int32)
+            shape = tf.shape(x)[:2]
+            sizes = tf.minimum(sizes, shape)
+            x = tf.image.random_crop(x, (sizes[0], sizes[1], 3))
+            # tf.clip_by_value(sizes[0], 0., x.shape[0]),
+            # tf.clip_by_value(sizes[1], 0., x.shape[1])))
+            x = tf.image.random_flip_left_right(x)
+        x = tf.image.resize(x, (self.input_size, self.input_size))
+        img = tf.cast(x, tf.float32) / 127.5 - 1
+        return img
+
+    def get_dataset(self, dataset_name, domain, _type, batch_size):
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
         num_images = len(files)
         self.logger.info(
             f"Found {num_images} domain{domain} images in {_type}{domain} folder."
         )
         ds = tf.data.Dataset.from_tensor_slices(files)
-
-        def image_processing(filename, is_train):
-            x = tf.io.read_file(filename)
-            x = tf.image.decode_jpeg(x, channels=3)
-            if is_train:
-                x = tf.image.random_crop(x, (self.input_size, self.input_size, 3))
-                x = tf.image.random_flip_left_right(x)
-            x = tf.image.resize(x, (self.input_size, self.input_size))
-            img = tf.cast(x, tf.float32) / 127.5 - 1
-            return img
-
-        ds = ds.map(lambda cur_x: image_processing(cur_x, is_train))
-        if shuffle:
-            ds = ds.shuffle(num_images)
+        ds = ds.apply(tf.data.experimental.shuffle_and_repeat(num_images))
+        ds = ds.apply(tf.data.experimental.map_and_batch(
+            lambda fname: self.image_processing(fname, True), batch_size))
         steps = int(np.ceil(num_images/batch_size))
-        if repeat:
-            ds = ds.repeat()
-            steps = float('inf')
-        return ds.batch(batch_size), steps
+        return iter(ds), steps
 
     @tf.function
     def pass_to_vgg(self, tensor):
@@ -345,34 +346,24 @@ class Trainer:
             epochs = self.pretrain_epochs
 
         if not self.disable_sampling:
-            val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
-                                           domain=self.source_domain,
-                                           _type="test",
-                                           batch_size=self.sample_size,
-                                           shuffle=False)
-            self.logger.info(f"Sampling {self.sample_size} images for monitoring "
-                             "generator's performance onward...")
-            dataiter = iter(dataset)
-            real_batch = next(dataiter)
+            val_files = glob(os.path.join(
+                self.data_dir, self.dataset_name, f"test{self.source_domain}", "*"))
+            val_real_batch = tf.map_fn(
+                lambda fname: self.image_processing(fname, False),
+                tf.constant(val_files), tf.float32, back_prop=False)
+            real_batch = next(dataset)
             while real_batch.shape[0] < self.sample_size:
-                real_batch = tf.concat((real_batch, next(iter(dataset))), 0)
+                real_batch = tf.concat((real_batch, next(dataset)), 0)
             real_batch = real_batch[:self.sample_size]
-            valiter = iter(val_draw)
-            val_real_batch = next(valiter)
             with summary_writer.as_default():
                 img = np.expand_dims(self._save_generated_images(
                     tf.cast((real_batch + 1) * 127.5, tf.uint8),
-                    image_name="pretrain_sample_images.png"),
-                    0,
-                )
+                    image_name="pretrain_sample_images.png"), 0,)
                 tf.summary.image("pretrain_sample_images", img, step=0)
                 img = np.expand_dims(self._save_generated_images(
                     tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
-                    image_name="pretrain_val_sample_images.png"),
-                    0,
-                )
+                    image_name="pretrain_val_sample_images.png"), 0,)
                 tf.summary.image("pretrain_val_sample_images", img, step=0)
-            del val_draw, dataiter, valiter
             gc.collect()
         else:
             self.logger.info("Proceeding pretraining without sample images...")
@@ -383,10 +374,10 @@ class Trainer:
         for epoch in range(epochs):
             epoch_idx = trained_epochs + epoch + 1
 
-            for step, image_batch in tqdm(
-                    enumerate(dataset, 1),
-                    desc=f"Pretrain Epoch {epoch + 1}/{epochs}",
-                    total=steps_per_epoch):
+            for step in tqdm(
+                    range(1, steps_per_epoch + 1),
+                    desc=f"Pretrain Epoch {epoch + 1}/{epochs}"):
+                image_batch = dataset.next()
                 self.pretrain_step(image_batch, generator, optimizer)
 
                 if step % self.pretrain_reporting_steps == 0:
@@ -423,6 +414,8 @@ class Trainer:
                 self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
                 checkpoint.save(file_prefix=self.pretrain_checkpoint_prefix)
             gc.collect()
+        del dataset
+        gc.collect()
 
     def train_gan(self):
         self.logger.info("Setting up summary writer to record progress on TensorBoard...")
@@ -440,13 +433,11 @@ class Trainer:
         ds_target, _ = self.get_dataset(dataset_name=self.dataset_name,
                                         domain=self.target_domain,
                                         _type="train",
-                                        batch_size=self.batch_size,
-                                        repeat=True)
+                                        batch_size=self.batch_size)
         ds_smooth, _ = self.get_dataset(dataset_name=self.dataset_name,
                                         domain=f"{self.target_domain}_smooth",
                                         _type="train",
-                                        batch_size=self.batch_size,
-                                        repeat=True)
+                                        batch_size=self.batch_size)
         self.logger.info("Setting up optimizer to update generator and discriminator...")
         g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr, beta_1=.5)
         d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr, beta_1=.5)
@@ -519,34 +510,24 @@ class Trainer:
             self.logger.info("specified checkpoint is not found, training from scratch...")
 
         if not self.disable_sampling:
-            val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
-                                           domain=self.source_domain,
-                                           _type="test",
-                                           batch_size=self.sample_size,
-                                           shuffle=False)
-            self.logger.info(f"Sampling {self.sample_size} images for monitoring "
-                             "generator's performance onward...")
-            dataiter = iter(ds_source)
-            real_batch = next(dataiter)
+            val_files = glob(os.path.join(
+                self.data_dir, self.dataset_name, f"test{self.source_domain}", "*"))
+            val_real_batch = tf.map_fn(
+                lambda fname: self.image_processing(fname, False),
+                tf.constant(val_files), tf.float32, back_prop=False)
+            real_batch = next(ds_source)
             while real_batch.shape[0] < self.sample_size:
-                real_batch = tf.concat((real_batch, next(iter(ds_source))), 0)
+                real_batch = tf.concat((real_batch, next(ds_source)), 0)
             real_batch = real_batch[:self.sample_size]
-            valiter = iter(val_draw)
-            val_real_batch = next(valiter)
             with summary_writer.as_default():
                 img = np.expand_dims(self._save_generated_images(
                     tf.cast((real_batch + 1) * 127.5, tf.uint8),
-                    image_name="gan_sample_images.png"),
-                    0,
-                )
+                    image_name="gan_sample_images.png"), 0,)
                 tf.summary.image("gan_sample_images", img, step=0)
                 img = np.expand_dims(self._save_generated_images(
                     tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
-                    image_name="gan_val_sample_images.png"),
-                    0,
-                )
+                    image_name="gan_val_sample_images.png"), 0,)
                 tf.summary.image("gan_val_sample_images", img, step=0)
-            del val_draw, dataiter, valiter
             gc.collect()
         else:
             self.logger.info("Proceeding training without sample images...")
@@ -559,11 +540,12 @@ class Trainer:
         for epoch in range(epochs):
             epoch_idx = trained_epochs + epoch + 1
 
-            for step, (source_images, target_images, smooth_images) in tqdm(
-                    enumerate(zip(ds_source, ds_target, ds_smooth), 1),
+            for step in tqdm(
+                    range(1, steps_per_epoch + 1),
                     desc=f'Train {epoch + 1}/{epochs}',
                     total=steps_per_epoch):
-
+                source_images, target_images, smooth_images = (
+                    ds_source.next(), ds_target.next(), ds_smooth.next())
                 self.train_step(source_images, target_images, smooth_images,
                                 g, d, g_optimizer, d_optimizer)
 
@@ -605,6 +587,8 @@ class Trainer:
 
             g.save_weights(os.path.join(self.model_dir, "generator"))
             gc.collect()
+        del ds_source, ds_target, ds_smooth
+        gc.collect()
 
 
 def main(**kwargs):
