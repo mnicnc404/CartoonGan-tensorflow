@@ -105,7 +105,7 @@ if __name__ == "__main__":
     shape = (1, 256, 256, 3)
     nx = np.random.rand(*shape).astype(np.float32)
     t = tf.keras.Input(shape=nx.shape[1:], batch_size=nx.shape[0])
-    out = g(t)
+    out = g(t, training=False)
     g.summary()
     print(f"Input  Shape: {nx.shape}")
     print(f"Output Shape: {out.shape}")
