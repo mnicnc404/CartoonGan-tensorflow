@@ -181,21 +181,21 @@ class Trainer:
         real_nrow = min(real_nrow, nrow)
         out_arrs = []
         for i in range(real_nrow):
-            cur_row = tf.concat(batch_x[(ncol * i):(ncol * (i + 1))], 1)
+            # cur_row = tf.concat(batch_x[(ncol * i):(ncol * (i + 1))], 1)
+            # NOTE: only available in tf >= 2.0 but seems not a good practice though
+            cur_row = tf.concat([batch_x[j] for j in range(ncol * i, ncol * (i + 1))], 1)
             if i == real_nrow - 1 and remainder != 0:
                 cur_row = tf.concat((cur_row, tf.zeros(
                     [h, remainder * w, c], dtype=tf.uint8)), 1)
-            print('cur_row', cur_row.shape)
             out_arrs.append(cur_row)
         out_arrs = tf.concat(out_arrs, 0)
-        print('out_arr', out_arrs.shape)
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
-        print(out_arrs.numpy().shape)
         imwrite(os.path.join(self.result_dir, image_name), out_arrs.numpy())
         return out_arrs
 
-    def get_dataset(self, dataset_name, domain, _type, batch_size, repeat=False):
+    def get_dataset(self, dataset_name, domain, _type, batch_size,
+                    repeat=False, shuffle=True):
         is_train = _type == 'train'
         files = glob(os.path.join(self.data_dir, dataset_name, f"{_type}{domain}", "*"))
         num_images = len(files)
@@ -214,7 +214,9 @@ class Trainer:
             img = tf.cast(x, tf.float32) / 127.5 - 1
             return img
 
-        ds = ds.map(lambda cur_x: image_processing(cur_x, is_train)).shuffle(num_images)
+        ds = ds.map(lambda cur_x: image_processing(cur_x, is_train))
+        if shuffle:
+            ds = ds.shuffle(num_images)
         steps = int(np.ceil(num_images/batch_size))
         if repeat:
             ds = ds.repeat()
@@ -307,6 +309,7 @@ class Trainer:
         self.d_smooth_loss_metric(d_smooth_loss)
 
     def pretrain_generator(self):
+        summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
         self.logger.info(f"Starting to pretrain generator with {self.pretrain_epochs} epochs...")
         self.logger.info(
             f"Building `{self.dataset_name}` dataset with domain `{self.source_domain}`..."
@@ -318,7 +321,8 @@ class Trainer:
         val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
                                        domain=self.source_domain,
                                        _type="test",
-                                       batch_size=self.sample_size)
+                                       batch_size=self.sample_size,
+                                       shuffle=False)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         generator = Generator(base_filters=2 if self.debug else 64, light=self.light)
@@ -364,12 +368,24 @@ class Trainer:
                 real_batch = tf.concat((real_batch, next(iter(dataset))), 0)
             real_batch = real_batch[:self.sample_size]
             val_real_batch = next(iter(val_draw))
+            with summary_writer.as_default():
+                img = tf.expand_dims(self._save_generated_images(
+                    tf.cast((real_batch + 1) * 127.5, tf.uint8),
+                    image_name="pretrain_sample_images.png"),
+                    0,
+                )
+                tf.summary.image("pretrain_sample_images", img, step=0)
+                img = tf.expand_dims(self._save_generated_images(
+                    tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
+                    image_name="pretrain_val_sample_images.png"),
+                    0,
+                )
+                tf.summary.image("pretrain_val_sample_images", img, step=0)
         else:
             self.logger.info("Proceeding pretraining without sample images...")
 
         self.logger.info("Starting pre-training loop, "
                          "setting up summary writer to record progress on TensorBoard...")
-        summary_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, "pretrain"))
 
         for epoch in range(epochs):
             epoch_idx = trained_epochs + epoch + 1
@@ -404,11 +420,11 @@ class Trainer:
                         (generator(val_real_batch, training=False) + 1) * 127.5, tf.uint8)
                     img = tf.expand_dims(self._save_generated_images(
                             val_fake_batch,
-                            image_name=("val_pretrain_generated_images_at_epoch_"
+                            image_name=("pretrain_val_generated_images_at_epoch_"
                                         f"{epoch_idx}_step_{step}.png")),
                             0,
                     )
-                    tf.summary.image('val_generated_images', img, step=global_step)
+                    tf.summary.image('pretrain_val_generated_images', img, step=global_step)
 
             if epoch % self.pretrain_saving_epochs == 0:
                 self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
@@ -440,7 +456,8 @@ class Trainer:
         val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
                                        domain=self.source_domain,
                                        _type="test",
-                                       batch_size=self.sample_size)
+                                       batch_size=self.sample_size,
+                                       shuffle=False)
 
         self.logger.info("Setting up optimizer to update generator and discriminator...")
         g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr, beta_1=.5)
@@ -522,6 +539,19 @@ class Trainer:
                 real_batch = tf.concat((real_batch, next(iter(ds_source))), 0)
             real_batch = real_batch[:self.sample_size]
             val_real_batch = next(iter(val_draw))
+            with summary_writer.as_default():
+                img = tf.expand_dims(self._save_generated_images(
+                    tf.cast((real_batch + 1) * 127.5, tf.uint8),
+                    image_name="sample_images.png"),
+                    0,
+                )
+                tf.summary.image("sample_images", img, step=0)
+                img = tf.expand_dims(self._save_generated_images(
+                    tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
+                    image_name="val_sample_images.png"),
+                    0,
+                )
+                tf.summary.image("val_sample_images", img, step=0)
         else:
             self.logger.info("Proceeding training without sample images...")
 
@@ -553,11 +583,11 @@ class Trainer:
                                 (g(real_batch, training=False) + 1) * 127.5, tf.uint8)
                             img = tf.expand_dims(self._save_generated_images(
                                     fake_batch,
-                                    image_name=("generated_images_at_epoch_"
+                                    image_name=("gan_generated_images_at_epoch_"
                                                 f"{epoch_idx}_step_{step}.png")),
                                     0,
                             )
-                            tf.summary.image('train_generated_images', img, step=global_step)
+                            tf.summary.image('gan_generated_images', img, step=global_step)
 
                     self.logger.debug(f"Epoch {epoch_idx}, Step {step} finished, "
                                       f"{global_step * self.batch_size} images processed.")
@@ -568,11 +598,11 @@ class Trainer:
                         (g(val_real_batch, training=False) + 1) * 127.5, tf.uint8)
                     img = tf.expand_dims(self._save_generated_images(
                             val_fake_batch,
-                            image_name=("val_generated_images_at_epoch_"
+                            image_name=("gan_val_generated_images_at_epoch_"
                                         f"{epoch_idx}_step_{step}.png")),
                             0,
                     )
-                    tf.summary.image('val_generated_images', img, step=global_step)
+                    tf.summary.image('gan_val_generated_images', img, step=global_step)
             self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
             g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
             d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
