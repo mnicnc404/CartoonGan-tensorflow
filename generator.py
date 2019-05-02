@@ -13,10 +13,16 @@ class Generator(Model):
                  num_resblocks=8,
                  light=False):
         super(Generator, self).__init__(name="Generator")
-        end_ksize = 3 if light else 7
+        if light:
+            downconv = DownShuffleUnitV2
+            resblock = BasicShuffleUnitV2
+            base_filters += 32
+            end_ksize = 5
+        else:
+            downconv = ConvBlock
+            resblock = ResBlock
+            end_ksize = 7
         self.light = light
-        downconv = DownShuffleUnitV2 if light else ConvBlock
-        resblock = BasicShuffleUnitV2 if light else ResBlock
         upconv = UpSampleConv
         self.flat_conv1 = FlatConv(filters=base_filters,
                                    kernel_size=end_ksize,
