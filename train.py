@@ -1,9 +1,11 @@
 import os
-import tensorflow as tf
+import gc
 from glob import glob
-from tqdm import tqdm
-import numpy as np
+
 from imageio import imwrite
+import tensorflow as tf
+import numpy as np
+from tqdm import tqdm
 
 from logger import get_logger
 from generator import Generator
@@ -179,7 +181,7 @@ class Trainer:
                 real_nrow += 1
             remainder = ncol - remainder
         real_nrow = min(real_nrow, nrow)
-        out_arrs = []
+        out_list = []
         for i in range(real_nrow):
             # cur_row = tf.concat(batch_x[(ncol * i):(ncol * (i + 1))], 1)
             # NOTE: only available in tf >= 2.0 but seems not a good practice though
@@ -187,11 +189,13 @@ class Trainer:
             if i == real_nrow - 1 and remainder != 0:
                 cur_row = tf.concat((cur_row, tf.zeros(
                     [h, remainder * w, c], dtype=tf.uint8)), 1)
-            out_arrs.append(cur_row)
-        out_arrs = tf.concat(out_arrs, 0)
+            out_list.append(cur_row)
+        out_arrs = tf.concat(out_list, 0)
+        del out_list
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
         imwrite(os.path.join(self.result_dir, image_name), out_arrs.numpy())
+        gc.collect()
         return out_arrs
 
     def get_dataset(self, dataset_name, domain, _type, batch_size,
@@ -318,11 +322,6 @@ class Trainer:
                                                     domain=self.source_domain,
                                                     _type="train",
                                                     batch_size=self.batch_size)
-        val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
-                                       domain=self.source_domain,
-                                       _type="test",
-                                       batch_size=self.sample_size,
-                                       shuffle=False)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         generator = Generator(base_filters=2 if self.debug else 64, light=self.light)
@@ -360,6 +359,11 @@ class Trainer:
             epochs = self.pretrain_epochs
 
         if not self.disable_sampling:
+            val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
+                                           domain=self.source_domain,
+                                           _type="test",
+                                           batch_size=self.sample_size,
+                                           shuffle=False)
             self.logger.info(f"Sampling {self.sample_size} images for monitoring "
                              "generator's performance onward...")
             dataiter = iter(dataset)
@@ -381,6 +385,8 @@ class Trainer:
                     0,
                 )
                 tf.summary.image("pretrain_val_sample_images", img, step=0)
+            del val_draw
+            gc.collect()
         else:
             self.logger.info("Proceeding pretraining without sample images...")
 
@@ -429,6 +435,7 @@ class Trainer:
             if epoch % self.pretrain_saving_epochs == 0:
                 self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
                 checkpoint.save(file_prefix=self.pretrain_checkpoint_prefix)
+            gc.collect()
 
     def train_gan(self):
         self.logger.info("Setting up summary writer to record progress on TensorBoard...")
@@ -453,12 +460,6 @@ class Trainer:
                                         _type="train",
                                         batch_size=self.batch_size,
                                         repeat=True)
-        val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
-                                       domain=self.source_domain,
-                                       _type="test",
-                                       batch_size=self.sample_size,
-                                       shuffle=False)
-
         self.logger.info("Setting up optimizer to update generator and discriminator...")
         g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr, beta_1=.5)
         d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr, beta_1=.5)
@@ -531,6 +532,11 @@ class Trainer:
             self.logger.info("specified checkpoint is not found, training from scratch...")
 
         if not self.disable_sampling:
+            val_draw, _ = self.get_dataset(dataset_name=self.dataset_name,
+                                           domain=self.source_domain,
+                                           _type="test",
+                                           batch_size=self.sample_size,
+                                           shuffle=False)
             self.logger.info(f"Sampling {self.sample_size} images for monitoring "
                              "generator's performance onward...")
             dataiter = iter(ds_source)
@@ -542,16 +548,18 @@ class Trainer:
             with summary_writer.as_default():
                 img = tf.expand_dims(self._save_generated_images(
                     tf.cast((real_batch + 1) * 127.5, tf.uint8),
-                    image_name="sample_images.png"),
+                    image_name="gan_sample_images.png"),
                     0,
                 )
-                tf.summary.image("sample_images", img, step=0)
+                tf.summary.image("gan_sample_images", img, step=0)
                 img = tf.expand_dims(self._save_generated_images(
                     tf.cast((val_real_batch + 1) * 127.5, tf.uint8),
-                    image_name="val_sample_images.png"),
+                    image_name="gan_val_sample_images.png"),
                     0,
                 )
-                tf.summary.image("val_sample_images", img, step=0)
+                tf.summary.image("gan_val_sample_images", img, step=0)
+            del val_draw
+            gc.collect()
         else:
             self.logger.info("Proceeding training without sample images...")
 
@@ -608,6 +616,7 @@ class Trainer:
             d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
 
             g.save_weights(os.path.join(self.model_dir, "generator"))
+            gc.collect()
 
 
 def main(**kwargs):
@@ -616,6 +625,7 @@ def main(**kwargs):
     mode = kwargs["mode"]
     if mode == "full":
         t.pretrain_generator()
+        gc.collect()
         t.train_gan()
     elif mode == "pretrain":
         t.pretrain_generator()
@@ -638,7 +648,7 @@ if __name__ == "__main__":
     parser.add_argument("--target_domain", type=str, default="B")
     parser.add_argument("--gan_type", type=str, default="lsgan", choices=["gan", "lsgan"])
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--reporting_steps", type=int, default=10)
+    parser.add_argument("--reporting_steps", type=int, default=100)
     parser.add_argument("--content_lambda", type=float, default=10)
     parser.add_argument("--style_lambda", type=float, default=1.)
     parser.add_argument("--g_adv_lambda", type=float, default=1)
@@ -649,7 +659,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_learning_rate", type=float, default=1e-5)
     parser.add_argument("--pretrain_epochs", type=int, default=2)
     parser.add_argument("--pretrain_saving_epochs", type=int, default=1)
-    parser.add_argument("--pretrain_reporting_steps", type=int, default=50)
+    parser.add_argument("--pretrain_reporting_steps", type=int, default=100)
     parser.add_argument("--data_dir", type=str, default="datasets")
     parser.add_argument("--log_dir", type=str, default="runs")
     parser.add_argument("--result_dir", type=str, default="result")
