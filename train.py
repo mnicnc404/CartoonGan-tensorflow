@@ -442,14 +442,14 @@ class Trainer:
         d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr, beta_1=.5)
         self.logger.info(f"Initializing generator with "
                          f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
-        g = Generator(base_filters=2 if self.debug else 64, light=self.light)
-        g(tf.keras.Input(
+        generator = Generator(base_filters=2 if self.debug else 64, light=self.light)
+        generator(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
 
         self.logger.info(f"Searching existing checkpoints: `{self.generator_checkpoint_prefix}`...")
         try:
-            g_checkpoint = tf.train.Checkpoint(g=g)
+            g_checkpoint = tf.train.Checkpoint(generator=generator)
             g_checkpoint.restore(
                 tf.train.latest_checkpoint(
                     self.generator_checkpoint_dir)).assert_existing_objects_matched()
@@ -463,13 +463,15 @@ class Trainer:
             else:
                 self.logger.info(f"Already trained {trained_epochs} epochs, "
                                  f"{epochs} epochs left to be trained...")
-        except AssertionError:
+        except AssertionError as e:
+            self.logger.info(e)
+            exit()
             self.logger.info(
                 "Previous checkpoints are not found, trying to load checkpoints from pretraining..."
             )
 
             try:
-                g_checkpoint = tf.train.Checkpoint(generator=g)
+                g_checkpoint = tf.train.Checkpoint(generator=generator)
                 g_checkpoint.restore(tf.train.latest_checkpoint(
                     os.path.join(
                         self.checkpoint_dir, "pretrain"))).assert_existing_objects_matched()
@@ -544,7 +546,7 @@ class Trainer:
                 source_images, target_images, smooth_images = (
                     ds_source.next(), ds_target.next(), ds_smooth.next())
                 self.train_step(source_images, target_images, smooth_images,
-                                g, d, g_optimizer, d_optimizer)
+                                generator, d, g_optimizer, d_optimizer)
 
                 if step % self.reporting_steps == 0:
 
@@ -555,7 +557,7 @@ class Trainer:
                             metric.reset_states()
                         if not self.disable_sampling:
                             fake_batch = tf.cast(
-                                (g(real_batch, training=False) + 1) * 127.5, tf.uint8)
+                                (generator(real_batch, training=False) + 1) * 127.5, tf.uint8)
                             img = np.expand_dims(self._save_generated_images(
                                     fake_batch,
                                     image_name=("gan_generated_images_at_epoch_"
@@ -570,7 +572,7 @@ class Trainer:
             with summary_writer.as_default():
                 if not self.disable_sampling:
                     val_fake_batch = tf.cast(
-                        (g(val_real_batch, training=False) + 1) * 127.5, tf.uint8)
+                        (generator(val_real_batch, training=False) + 1) * 127.5, tf.uint8)
                     img = np.expand_dims(self._save_generated_images(
                             val_fake_batch,
                             image_name=("gan_val_generated_images_at_epoch_"
@@ -582,7 +584,7 @@ class Trainer:
             g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
             d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
 
-            g.save_weights(os.path.join(self.model_dir, "generator"))
+            generator.save_weights(os.path.join(self.model_dir, "generator"))
             gc.collect()
         del ds_source, ds_target, ds_smooth
         gc.collect()
