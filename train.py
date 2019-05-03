@@ -407,7 +407,7 @@ class Trainer:
                                         f"{epoch_idx}_step_{step}.png")),
                             0,
                     )
-                    tf.summary.image('pretrain_val_generated_images', img, step=global_step)
+                    tf.summary.image('pretrain_val_generated_images', img, step=epoch)
 
             if epoch % self.pretrain_saving_epochs == 0:
                 self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
@@ -579,7 +579,7 @@ class Trainer:
                                         f"{epoch_idx}_step_{step}.png")),
                             0,
                     )
-                    tf.summary.image('gan_val_generated_images', img, step=global_step)
+                    tf.summary.image('gan_val_generated_images', img, step=epoch)
             self.logger.info(f"Saving checkpoints after epoch {epoch_idx} ended...")
             g_checkpoint.save(file_prefix=self.generator_checkpoint_prefix)
             d_checkpoint.save(file_prefix=self.discriminator_checkpoint_prefix)
