@@ -1,3 +1,6 @@
+"""
+Minimum inference code
+"""
 import os
 import numpy as np
 from imageio import imread, imwrite
