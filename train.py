@@ -171,7 +171,6 @@ class Trainer:
 
     def _save_generated_images(self, batch_x, image_name, nrow=2, ncol=4):
         # NOTE: 0 <= batch_x <= 1, float32, numpy.ndarray
-        # NOTE: not doing inplace multiplication on batch_x
         if not isinstance(batch_x, np.ndarray):
             batch_x = batch_x.numpy()
         n, h, w, c = batch_x.shape
@@ -194,8 +193,6 @@ class Trainer:
             shape = tf.shape(x)[:2]
             sizes = tf.minimum(sizes, shape)
             x = tf.image.random_crop(x, (sizes[0], sizes[1], 3))
-            # tf.clip_by_value(sizes[0], 0., x.shape[0]),
-            # tf.clip_by_value(sizes[1], 0., x.shape[1])))
             x = tf.image.random_flip_left_right(x)
         x = tf.image.resize(x, (self.input_size, self.input_size))
         img = tf.cast(x, tf.float32) / 127.5 - 1
@@ -216,7 +213,8 @@ class Trainer:
 
     @tf.function
     def pass_to_vgg(self, tensor):
-        if self.vgg:
+        # NOTE: self.vgg should be fixed
+        if self.vgg is not None:
             tensor = self.vgg(tensor)
         return tensor
 
@@ -270,6 +268,7 @@ class Trainer:
 
             g_adv_loss = self.g_adv_lambda * self.generator_adversarial_loss(fake_output)
             g_total_loss = g_adv_loss
+            # NOTE: self.*_lambdas are fixed
             if self.content_lambda != 0. or self.style_lambda != 0.:
                 vgg_generated_images = self.pass_to_vgg(generated_images)
                 if self.content_lambda != 0.:
@@ -447,7 +446,6 @@ class Trainer:
         g(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
-        # g.summary()
 
         self.logger.info(f"Searching existing checkpoints: `{self.generator_checkpoint_prefix}`...")
         try:
@@ -496,7 +494,6 @@ class Trainer:
         d(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
             batch_size=self.batch_size))
-        # d.summary()
 
         self.logger.info("Searching existing checkpoints: "
                          f"`{self.discriminator_checkpoint_prefix}`...")
