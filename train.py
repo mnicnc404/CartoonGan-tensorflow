@@ -99,7 +99,7 @@ class Trainer:
         self.generator_name = generator_name
         self.discriminator_name = discriminator_name
 
-        self.logger = get_logger("Trainer")
+        self.logger = get_logger("Trainer", debug=debug)
 
         if not self.ignore_vgg:
             self.logger.info("Setting up VGG19 for computing content loss...")

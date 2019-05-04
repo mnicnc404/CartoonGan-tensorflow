@@ -2,8 +2,9 @@ import sys
 import logging
 
 
-def get_logger(name, log_file=None):
-    logging.basicConfig(level=logging.INFO)
+def get_logger(name, log_file=None, debug=False):
+    lvl = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(level=lvl)
     logger = logging.getLogger(name)
     formatter = logging.Formatter(
         "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
@@ -16,5 +17,5 @@ def get_logger(name, log_file=None):
         fhandler.setFormatter(formatter)
         logger.addHandler(fhandler)
     logger.propagate = False
-    logger.setLevel(logging.INFO)
+    logger.setLevel(lvl)
     return logger
