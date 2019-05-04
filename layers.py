@@ -210,8 +210,7 @@ class UpSampleConv(Model):
         super(UpSampleConv, self).build(input_shape)
 
     def call(self, x, training=False):
-        _, cur_h, cur_w, _ = x.shape
-        x = tf.image.resize(x, (cur_h * 2, cur_w * 2))
+        x = tf.keras.backend.resize_images(x, 2, 2, "channels_last", 'bilinear')
         return self.model(x, training=training)
 
 
