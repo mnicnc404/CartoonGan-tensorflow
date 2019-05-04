@@ -464,9 +464,8 @@ class Trainer:
                 self.logger.info(f"Already trained {trained_epochs} epochs, "
                                  f"{epochs} epochs left to be trained...")
         except AssertionError as e:
-            self.logger.info(e)
-            exit()
-            self.logger.info(
+            self.logger.warning(e)
+            self.logger.warning(
                 "Previous checkpoints are not found, trying to load checkpoints from pretraining..."
             )
 
@@ -478,8 +477,8 @@ class Trainer:
                 self.logger.info("Successfully loaded "
                                  f"`{self.pretrain_checkpoint_prefix}`...")
             except AssertionError:
-                self.logger.info("specified pretrained checkpoint is not found, "
-                                 "training from scratch...")
+                self.logger.warning("specified pretrained checkpoint is not found, "
+                                    "training from scratch...")
 
             trained_epochs = 0
             epochs = self.epochs
