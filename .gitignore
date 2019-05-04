@@ -26,3 +26,5 @@ out/
 old_train.py
 
 clean.sh
+SavedModel/
+NewSavedModel/
