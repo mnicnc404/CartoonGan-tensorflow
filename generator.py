@@ -22,7 +22,6 @@ class Generator(Model):
             downconv = ConvBlock
             resblock = ResBlock
             end_ksize = 7
-        self.light = light
         upconv = UpSampleConv
         self.flat_conv1 = FlatConv(filters=base_filters,
                                    kernel_size=end_ksize,
@@ -69,11 +68,7 @@ class Generator(Model):
         x = self.flat_conv1(x, training=training)
         x = self.down_conv1(x, training=training)
         x = self.down_conv2(x, training=training)
-        if self.light:
-            x_prev = x
         x = self.residual_blocks(x, training=training)
-        if self.light:
-            x = x - x_prev
         x = self.up_conv1(x, training=training)
         x = self.up_conv2(x, training=training)
         x = self.final_conv(x)

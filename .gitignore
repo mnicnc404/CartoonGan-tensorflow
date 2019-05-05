@@ -18,6 +18,7 @@ input_images/
 output_images/
 **/training_checkpoints/
 models/
+light_model/
 out/
 
 **/*.npy
