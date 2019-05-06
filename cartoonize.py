@@ -14,14 +14,6 @@ from style_transfer.cartoongan import cartoongan
 STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
 VALID_EXTENSIONS = ['jpg', 'png', 'gif', 'JPG']
 
-# TODO: mp4 processing
-# TODO: add self-trained cartoongan: MODE
-# TODO: add documentation of each function
-# TODO: readme, install guide(pip install -r requirements.txt + keras-contri?)
-# TODO: adjust options' order
-# TODO: fix screwy gif
-# TODO: gif categories: [idol, movie(marvel, titanic), meme, animals(cat, dog), sports(basketball), natural]
-# TODO: auto-adjust batch-size
 
 parser = argparse.ArgumentParser(description="transform real world images to specified cartoon style(s)")
 parser.add_argument("--styles", nargs="+", default=[STYLES[0]],
@@ -66,8 +58,6 @@ parser.add_argument("--logging_lvl", type=str, default="info",
 parser.add_argument("--debug", action="store_true",
                     help="show the most detailed logging messages for debugging purpose")
 parser.add_argument("--show_tf_cpp_log", action="store_true")
-
-# TODO: processing mp4 possible? how about converting to mp4?
 
 args = parser.parse_args()
 
@@ -139,7 +129,6 @@ def save_transformed_image(output_image, img_filename, save_dir):
 
 
 def save_concatenated_image(image_paths, image_folder="comparison", num_columns=2):
-    # TODO: add style as title, refer Comixify (as a option: add_style_name)
     images = [PIL.Image.open(i).convert('RGB') for i in image_paths]
     # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
     min_shape = sorted([(np.sum(i.size), i.size) for i in images])[0][1]
@@ -295,8 +284,6 @@ def result_exist(image_path, style):
 
 def main():
 
-    # TODO: print formatted information, like sampled frame etc
-
     start = datetime.now()
     logger.info(f"Transformed images will be saved to `{args.output_dir}` folder.")
     if not os.path.exists(args.output_dir):
@@ -308,7 +295,6 @@ def main():
 
     # decide what styles to used in this execution
     styles = STYLES if args.all_styles else args.styles
-    # TODO: check style input
 
     models = list()
     for style in styles:
@@ -377,8 +363,6 @@ def main():
                 save_concatenated_image(related_image_paths)
     progress_bar.close()
 
-    # TODO: decide wether to delete tmp dir
-    # TODO: summary
     time_elapsed = datetime.now() - start
     logger.info(f"Total processing time: {time_elapsed}")
 
