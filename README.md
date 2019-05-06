@@ -35,7 +35,7 @@ To run code in this repo properly, you will need:
 - [imageio](https://pypi.org/project/imageio/)
 - [tb-nightly](https://pypi.org/project/tb-nightly/)
 
-For environment management, we recommend [Anaconda](https://www.anaconda.com/). If GPU is available, you can simply install all the packages using:
+For environment management, we recommend [Anaconda](https://www.anaconda.com/). If GPU is available, you can install all the packages simnply using:
 
 ```bash
 conda env create -n cartoongan -f environment_gpu.yml
