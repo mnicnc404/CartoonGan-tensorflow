@@ -41,7 +41,7 @@ def main(m_path, out_dir, light):
     logger.info(" ".join(cmd))
     exit_code = Popen(cmd).wait()
     if exit_code == 0:
-        logger.info("Model converted to tfjs model successfully")
+        logger.info(f"Model converted to {saved_model_dir} and {tfjs_model_dir} successfully")
     else:
         logger.error("tfjs model conversion failed")
 
