@@ -222,13 +222,31 @@ You can try cartoonizing with your exported SavedModel:
 ```
 # default of --out_dir is out
 python inference_with_saved_model.py \
-    --m_path path/to/your/desired/export/folder/SavedModel_0000 \
+    --m_path path/to/your/exported/SavedModelFolder \
     --img_path path/to/your/img.jpg \
     --out_dir path/to/your/desired/output/folder
 ```
 
 And generated image will be saved to `path/to/your/desired/output/folder/img.jpg`.
 
+We trained 2 model checkpoints and put them in the repo: `light_paprika_ckpt` and `light_shinkai_ckpt` (~7MB Total). You can play around the ckpts with `inference_with_ckpt.py` and `export.py`.
+
+Also, we put our exported shinkai and paprika SavedModels in `exported_models` (~11MB Total). You can play around the SavedModels with `inference_with_saved_model.py`.
+
+
+### (Will be deprecated) Export checkpoint to frozen_pb
+
+This script is just a demontration of backward compatibility.
+
+```
+# You should specify --light if your model is trained with --light
+# If you didn't specify --light on your training, you should remove --light
+# default of --out_dir is optimized_pbs
+python to_pb.py \
+    --m_path path/to/your/desired/export/folder/SavedModel_0000 \
+    --out_dir path/to/your/desired/export/folder \
+    --light
+```
 
 ## Generate anime using trained CartoonGAN
 

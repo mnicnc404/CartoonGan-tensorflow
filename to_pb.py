@@ -36,7 +36,7 @@ def main(m_path, out_dir, light=False, test_out=True):
     try:
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            g.load_weights(m_path)
+            g.load_weights(tf.train.latest_checkpoint(m_path))
             in_graph_def = tf.get_default_graph().as_graph_def()
             out_graph_def = tf.graph_util.convert_variables_to_constants(
                 sess, in_graph_def, [out_name])
@@ -81,10 +81,9 @@ def main(m_path, out_dir, light=False, test_out=True):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--m_path", type=str,
-                        default=os.path.join("models", "generator"))
+    parser.add_argument("--m_path", type=str, default="models")
     parser.add_argument("--out_dir", type=str, default='optimized_pbs')
     parser.add_argument("--light", action='store_true')
-    parser.add_argument("--test_out", action='store_true')
+    parser.add_argument("--not_test_out", action='store_true')
     args = parser.parse_args()
-    main(args.m_path, args.out_dir, args.light, args.test_out)
+    main(args.m_path, args.out_dir, args.light, not args.not_test_out)
