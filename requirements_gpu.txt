@@ -1,0 +1,7 @@
+numpy==1.15.1
+tensorflow-gpu==2.0.0a0
+six==1.11.0
+tensorflowjs==1.0.1
+tqdm
+imageio
+tb-nightly==1.14.0a20190505
