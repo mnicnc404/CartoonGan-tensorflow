@@ -13,7 +13,7 @@ def main(m_path, out_dir, light):
     logger = get_logger("export")
     try:
         g = Generator(light=light)
-        g.load_weights(m_path)
+        g.load_weights(tf.train.latest_checkpoint(m_path))
         t = tf.keras.Input(shape=[None, None, 3], batch_size=None)
         g(t, training=False)
         g.summary()
@@ -49,7 +49,7 @@ def main(m_path, out_dir, light):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--m_path", type=str, default='models/generator')
+    parser.add_argument("--m_path", type=str, default='models')
     parser.add_argument("--out_dir", type=str, default='exported_models')
     parser.add_argument("--light", action='store_true')
     args = parser.parse_args()

@@ -19,7 +19,7 @@ def main(m_path, img_path, out_dir, light=False):
     logger.info(f"generating image from {img_path}")
     try:
         g = Generator(light=light)
-        g.load_weights(m_path)
+        g.load_weights(tf.train.latest_checkpoint(m_path))
         img = np.expand_dims(imread(img_path), 0).astype(np.float32) / 127.5 - 1
         out = ((g(img).numpy().squeeze() + 1) * 127.5).astype(np.uint8)
     except ValueError:
@@ -40,7 +40,7 @@ def main(m_path, img_path, out_dir, light=False):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--m_path", type=str, default=os.path.join("models", "generator"))
+    parser.add_argument("--m_path", type=str, default="models")
     parser.add_argument("--img_path", type=str,
                         default=os.path.join("input_images", "temple.jpg"))
     parser.add_argument("--out_dir", type=str, default='out')
