@@ -228,6 +228,7 @@ class Trainer:
 
         ds = ds.apply(tf.data.experimental.map_and_batch(fn, batch_size))
         steps = int(np.ceil(num_images/batch_size))
+        # user iter(ds) to avoid generating iterator every epoch
         return iter(ds), steps
 
     @tf.function
@@ -399,6 +400,9 @@ class Trainer:
             for step in tqdm(
                     range(1, steps_per_epoch + 1),
                     desc=f"Pretrain Epoch {epoch + 1}/{epochs}"):
+                # NOTE: not following official "for img in dataset" example
+                #       since it generates new iterator every epoch and can
+                #       hardly be garbage-collected by python
                 image_batch = dataset.next()
                 self.pretrain_step(image_batch, generator, optimizer)
 
