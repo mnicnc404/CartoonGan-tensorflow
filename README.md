@@ -304,6 +304,8 @@ To explore all options with detailed explaination, simply run `python cartoonize
 
 <img src="images/cartoonize-script-demo.jpg" alt="demo" width="80%"/>
 
+Currently, [cartoonize.py](cartoonize.py) will load pretrained models released by the [author](http://cg.cs.tsinghua.edu.cn/people/~Yongjin/Yongjin.htm) of CartoonGAN and [CartoonGAN-Test-Pytorch-Torch](https://github.com/Yijunmaverick/CartoonGAN-Test-Pytorch-Torch) to turn input images into cartoon-like images.
+
 
 ### Gallery of Generated Anime
 
