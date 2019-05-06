@@ -233,7 +233,6 @@ We trained 2 model checkpoints and put them in the repo: `light_paprika_ckpt` an
 
 Also, we put our exported shinkai and paprika SavedModels in `exported_models` (~11MB Total). You can play around the SavedModels with `inference_with_saved_model.py`.
 
-
 ### (Will be deprecated) Export checkpoint to frozen_pb
 
 This script is just a demontration of backward compatibility.
@@ -243,7 +242,7 @@ This script is just a demontration of backward compatibility.
 # If you didn't specify --light on your training, you should remove --light
 # default of --out_dir is optimized_pbs
 python to_pb.py \
-    --m_path path/to/your/desired/export/folder/SavedModel_0000 \
+    --m_path path/to/your/exported/SavedModelFolder \
     --out_dir path/to/your/desired/export/folder \
     --light
 ```
