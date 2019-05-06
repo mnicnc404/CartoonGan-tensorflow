@@ -87,7 +87,7 @@ python path/to/smooth.py --path path/to/datasets/YourDataset  # YourDataset shou
 
 ```
 
-[Credit to taki0112](https://github.com/taki0112/CartoonGAN-Tensorflow/blob/master/edge_smooth.py)
+[smooth.py credit to taki0112 https://github.com/taki0112/CartoonGAN-Tensorflow/blob/master/edge_smooth.py](https://github.com/taki0112/CartoonGAN-Tensorflow/blob/master/edge_smooth.py)
 
 ### Start training
 
@@ -183,6 +183,51 @@ In addition to metrics and loss functions, it is good practice to keep an eye on
 
 
 For further details about training, we recommend reading [train.py](train.py).
+
+### Inference with trained checkpoint
+
+Once your generator is well-trained, you can try cartoonizing with your trained checkpoint:
+
+```
+# You should specify --light if your model is trained with --light
+# If you didn't specify --light on your training, you should remove --light
+# default of --out_dir is out
+python inference_with_ckpt.py \
+    --m_path path/to/model/folder \
+    --img_path path/to/your/img.jpg \
+    --out_dir path/to/your/desired/output/folder \
+    --light
+```
+And generated image will be saved to `path/to/your/desired/output/folder/img.jpg`.
+
+### Export checkpoint to SavedModel and tfjs
+
+Once your generator is well-trained, you can export your model to tfjs model and SavedModel:
+
+```
+# You should specify --light if your model is trained with --light
+# If you didn't specify --light on your training, you should remove --light
+# default of --out_dir is exported_models
+python export.py \
+    --m_path path/to/model/folder \
+    --out_dir path/to/your/desired/export/folder \
+    --light
+```
+And exported tfjs model and SavedModel will be saved to `path/to/your/desired/export/folder`.
+
+Note that the whole model architecture is saved to SavedModel and tfjs model, so you don't need to specify `--light` anymore.
+
+You can try cartoonizing with your exported SavedModel:
+
+```
+# default of --out_dir is out
+python inference_with_saved_model.py \
+    --m_path path/to/your/desired/export/folder/SavedModel_0000 \
+    --img_path path/to/your/img.jpg \
+    --out_dir path/to/your/desired/output/folder
+```
+
+And generated image will be saved to `path/to/your/desired/output/folder/img.jpg`.
 
 
 ## Generate anime using trained CartoonGAN
