@@ -29,6 +29,7 @@ git clone https://github.com/mnicnc404/CartoonGan-tensorflow.git
 ```
 
 To run code in this repo properly, you will need:
+- [Python 3.6](https://www.python.org/downloads/release/python-360/)
 - [TensorFlow 2.0 Alpha](https://www.tensorflow.org/alpha)
 - [tqdm](https://github.com/tqdm/tqdm)
 - [imageio](https://pypi.org/project/imageio/)
