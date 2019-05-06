@@ -2,6 +2,7 @@ import os
 import gc
 from glob import glob
 from itertools import product
+from random import choice
 
 from imageio import imwrite
 import tensorflow as tf
@@ -32,6 +33,7 @@ class Trainer:
         gan_type,
         epochs,
         input_size,
+        multi_scale,
         batch_size,
         sample_size,
         reporting_steps,
@@ -71,6 +73,7 @@ class Trainer:
         self.gan_type = gan_type
         self.epochs = epochs
         self.input_size = input_size
+        self.multi_scale = multi_scale
         self.batch_size = batch_size
         self.sample_size = sample_size
         self.reporting_steps = reporting_steps
@@ -100,6 +103,8 @@ class Trainer:
         self.discriminator_name = discriminator_name
 
         self.logger = get_logger("Trainer", debug=debug)
+        # NOTE: just minimal demonstration of multi-scale training
+        self.sizes = [self.input_size - 32, self.input_size, self.input_size + 32]
 
         if not self.ignore_vgg:
             self.logger.info("Setting up VGG19 for computing content loss...")
@@ -184,17 +189,23 @@ class Trainer:
         return out_arr
 
     @tf.function
+    def random_resize(self, x):
+        size = choice(self.sizes)
+        return tf.image.resize(x, (size, size))
+
+    @tf.function
     def image_processing(self, filename, is_train=True):
+        crop_size = self.input_size + 32 if self.multi_scale else self.input_size
         x = tf.io.read_file(filename)
         x = tf.image.decode_jpeg(x, channels=3)
         if is_train:
             sizes = tf.cast(
-                self.input_size * tf.random.uniform([2], 0.9, 1.1), tf.int32)
+                crop_size * tf.random.uniform([2], 0.9, 1.1), tf.int32)
             shape = tf.shape(x)[:2]
             sizes = tf.minimum(sizes, shape)
             x = tf.image.random_crop(x, (sizes[0], sizes[1], 3))
             x = tf.image.random_flip_left_right(x)
-        x = tf.image.resize(x, (self.input_size, self.input_size))
+        x = tf.image.resize(x, (crop_size, crop_size))
         img = tf.cast(x, tf.float32) / 127.5 - 1
         return img
 
@@ -206,8 +217,14 @@ class Trainer:
         )
         ds = tf.data.Dataset.from_tensor_slices(files)
         ds = ds.apply(tf.data.experimental.shuffle_and_repeat(num_images))
-        ds = ds.apply(tf.data.experimental.map_and_batch(
-            lambda fname: self.image_processing(fname, True), batch_size))
+
+        def fn(fname):
+            if self.multi_scale:
+                return self.random_resize(self.image_processing(fname, True))
+            else:
+                return self.image_processing(fname, True)
+
+        ds = ds.apply(tf.data.experimental.map_and_batch(fn, batch_size))
         steps = int(np.ceil(num_images/batch_size))
         return iter(ds), steps
 
@@ -308,8 +325,12 @@ class Trainer:
                                                     domain=self.source_domain,
                                                     _type="train",
                                                     batch_size=self.batch_size)
-        self.logger.info(f"Initializing generator with "
-                         f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
+        if self.multi_scale:
+            self.logger.info(f"Initializing generator with "
+                             f"batch_size: {self.batch_size}, input_size: multi-scale...")
+        else:
+            self.logger.info(f"Initializing generator with "
+                             f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         generator = Generator(base_filters=2 if self.debug else 64, light=self.light)
         generator(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
@@ -440,8 +461,12 @@ class Trainer:
         self.logger.info("Setting up optimizer to update generator and discriminator...")
         g_optimizer = tf.keras.optimizers.Adam(learning_rate=self.generator_lr, beta_1=.5)
         d_optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_lr, beta_1=.5)
-        self.logger.info(f"Initializing generator with "
-                         f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
+        if self.multi_scale:
+            self.logger.info(f"Initializing generator with "
+                             f"batch_size: {self.batch_size}, input_size: multi-scale...")
+        else:
+            self.logger.info(f"Initializing generator with "
+                             f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         generator = Generator(base_filters=2 if self.debug else 64, light=self.light)
         generator(tf.keras.Input(
             shape=(self.input_size, self.input_size, 3),
@@ -483,8 +508,12 @@ class Trainer:
             trained_epochs = 0
             epochs = self.epochs
 
-        self.logger.info(f"Initializing discriminator with "
-                         f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
+        if self.multi_scale:
+            self.logger.info(f"Initializing discriminator with "
+                             f"batch_size: {self.batch_size}, input_size: multi-scale...")
+        else:
+            self.logger.info(f"Initializing discriminator with "
+                             f"batch_size: {self.batch_size}, input_size: {self.input_size}...")
         if self.debug:
             d_base_filters = 2
         elif self.light:
@@ -612,6 +641,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_name", type=str, default="realworld2cartoon")
     parser.add_argument("--light", action="store_true")
     parser.add_argument("--input_size", type=int, default=256)
+    parser.add_argument("--multi_scale", action="store_true")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--sample_size", type=int, default=8)
     parser.add_argument("--source_domain", type=str, default="A")
