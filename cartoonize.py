@@ -11,8 +11,7 @@ from datetime import datetime
 from style_transfer.cartoongan import cartoongan
 
 
-CARTOONGAN_STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
-STYLES = CARTOONGAN_STYLES
+STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
 VALID_EXTENSIONS = ['jpg', 'png', 'gif', 'JPG']
 
 # TODO: mp4 processing
@@ -73,6 +72,25 @@ parser.add_argument("--show_tf_cpp_log", action="store_true")
 args = parser.parse_args()
 
 TEMPORARY_DIR = os.path.join(f"{args.output_dir}", ".tmp")
+
+
+logger = logging.getLogger("Cartoonizer")
+logger.propagate = False
+log_lvl = {"debug": logging.DEBUG, "info": logging.INFO,
+           "warning": logging.WARNING, "error": logging.ERROR,
+           "critical": logging.CRITICAL}
+if args.debug:
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(log_lvl[args.logging_lvl])
+formatter = logging.Formatter(
+    "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+stdhandler = logging.StreamHandler(sys.stdout)
+stdhandler.setFormatter(formatter)
+logger.addHandler(stdhandler)
+
+if not args.show_tf_cpp_log:
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
 def pre_processing(image_path, style, expand_dim=True):
@@ -366,23 +384,4 @@ def main():
 
 
 if __name__ == "__main__":
-
-    logger = logging.getLogger("Cartoonizer")
-    logger.propagate = False
-    log_lvl = {"debug": logging.DEBUG, "info": logging.INFO,
-               "warning": logging.WARNING, "error": logging.ERROR,
-               "critical": logging.CRITICAL}
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(log_lvl[args.logging_lvl])
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
-    stdhandler = logging.StreamHandler(sys.stdout)
-    stdhandler.setFormatter(formatter)
-    logger.addHandler(stdhandler)
-
-    if not args.show_tf_cpp_log:
-        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
     main()
