@@ -3,7 +3,6 @@ __pycache__/
 *.swp
 *.swo
 *~
-*.pb
 scripts/*.pb
 scripts/runs/
 
