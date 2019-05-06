@@ -1,3 +1,7 @@
+"""
+credit to https://github.com/taki0112/CartoonGAN-Tensorflow/blob/master/edge_smooth.py
+LICENSE for this script: https://github.com/taki0112/CartoonGAN-Tensorflow/blob/master/LICENSE
+"""
 import os
 import numpy as np
 import cv2
