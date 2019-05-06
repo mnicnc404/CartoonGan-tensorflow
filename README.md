@@ -234,7 +234,7 @@ We trained 2 model checkpoints and put them in the repo: `light_paprika_ckpt` an
 Also, we put our exported shinkai and paprika SavedModels in `exported_models` (~11MB Total). You can play around the SavedModels with `inference_with_saved_model.py`.
 
 Image generated using our `exported_models/light_shinkai_SavedModel`:
-![temple_demo.jpg](images/temple_demo.jpg)
+![origami_demo.jpg](images/origami_demo.jpg)
 
 
 ### (Will be deprecated) Export checkpoint to frozen_pb
