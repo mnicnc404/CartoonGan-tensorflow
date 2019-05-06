@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 
 def make_edge_smooth(path):
-    file_list = glob(os.path.expanduser(os.path.join(path, 'testB', '*')))
-    save_dir = os.path.expanduser(os.path.join(path, 'testB_smooth'))
+    file_list = glob(os.path.expanduser(os.path.join(path, 'trainB', '*')))
+    save_dir = os.path.expanduser(os.path.join(path, 'trainB_smooth'))
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
 
