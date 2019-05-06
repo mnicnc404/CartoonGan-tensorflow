@@ -195,7 +195,9 @@ class Trainer:
 
     @tf.function
     def image_processing(self, filename, is_train=True):
-        crop_size = self.input_size + 32 if self.multi_scale else self.input_size
+        crop_size = self.input_size
+        if self.multi_scale and is_train:
+            crop_size += 32
         x = tf.io.read_file(filename)
         x = tf.image.decode_jpeg(x, channels=3)
         if is_train:
