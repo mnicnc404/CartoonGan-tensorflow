@@ -303,10 +303,10 @@ def main():
         image_paths.extend(glob.glob(os.path.join(args.input_dir, f"*.{ext}")))
     logger.info(f"Preparing to transform {len(image_paths)} images from `{args.input_dir}` directory...")
 
-    progress_bar = tqdm(image_paths)
+    progress_bar = tqdm(image_paths, desc='Transforming')
     for image_path in progress_bar:
         image_filename = image_path.split("/")[-1]
-        progress_bar.set_description(f"Transforming {image_filename}")
+        progress_bar.set_postfix(File=image_filename)
 
         if image_filename.endswith(".gif") and not args.ignore_gif:
             png_paths = convert_gif_to_png(image_path)
@@ -357,6 +357,7 @@ def main():
 
             if not args.skip_comparison:
                 save_concatenated_image(related_image_paths)
+    progress_bar.close()
 
     # TODO: decide wether to delete tmp dir
     # TODO: summary
