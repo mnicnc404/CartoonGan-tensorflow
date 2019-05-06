@@ -147,7 +147,7 @@ When we design the light-weight generator, [ShuffleNet V2](https://arxiv.org/abs
 
 ![generator](images/generator.png)
 
-Generator proposed by the authors 
+Generator proposed by the original CartoonGAN authors 
 
 
 To train a CartoonGAN with the original generator/discriminator architecture proposed by the [CartoonGAN](http://openaccess.thecvf.com/content_cvpr_2018/papers/Chen_CartoonGAN_Generative_Adversarial_CVPR_2018_paper.pdf) authors, simply remove `--light` option:
