@@ -39,12 +39,16 @@ For environment management, we recommend [Anaconda](https://www.anaconda.com/). 
 
 ```bash
 conda env create -n cartoongan -f environment_gpu.yml
+conda activate cartoongan
+# to deactivate this env, run "conda deactivate"
 ```
 
 Although it is not recommended to train CartoonGANs without a GPU, you can still set up environment by running:
 
 ```bash
 conda env create -n cartoongan -f environment_cpu.yml
+conda activate cartoongan
+# to deactivate this env, run "conda deactivate"
 ```
 
 If Anaconda is not available, you can also run:
