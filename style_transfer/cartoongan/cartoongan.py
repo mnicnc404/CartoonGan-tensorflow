@@ -156,6 +156,3 @@ if __name__ == '__main__':
 
     diff = np.sqrt(np.mean((out - tf_out) ** 2))
     assert diff < 1e-6
-
-
-
