@@ -6,7 +6,7 @@ Blog posts with project overview, online demo and gallery of generated anime:
 | Blog post | Language | 
 |-----------|----------|
 | [Generate Anime using CartoonGAN and TensorFlow 2.0](https://leemeng.tw/generate-anime-using-cartoongan-and-tensorflow2-en.html) | English |
-| [用 CartoonGAN 及 TensorFlow 2 生成新海誠與宮崎駿動畫](https://leemeng.tw/generate-anime-using-cartoongan-and-tensorflow2.html) | 中文（Chinese）|
+| [用 CartoonGAN 及 TensorFlow 2 生成新海誠與宮崎駿動畫](https://leemeng.tw/generate-anime-using-cartoongan-and-tensorflow2.html) | 繁體中文（Traditional Chinese）|
 
 ![cat](images/cover.gif)
 
