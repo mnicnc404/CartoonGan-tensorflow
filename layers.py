@@ -8,7 +8,9 @@ from keras_contrib.layers import InstanceNormalization
 
 
 def channel_shuffle_2(x):
-    _, h, w, c = x.shape
+    dyn_shape = tf.shape(x)
+    h, w = dyn_shape[1], dyn_shape[2]
+    c = x.shape[3]
     x = K.reshape(x, [-1, h, w, 2, c // 2])
     x = K.permute_dimensions(x, [0, 1, 2, 4, 3])
     x = K.reshape(x, [-1, h, w, c])
