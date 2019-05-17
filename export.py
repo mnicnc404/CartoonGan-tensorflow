@@ -17,7 +17,8 @@ def main(m_path, out_dir, light):
         t = tf.keras.Input(shape=[None, None, 3], batch_size=None)
         g(t, training=False)
         g.summary()
-    except ValueError:
+    except ValueError as e:
+        logger.error(e)
         logger.error("Failed to load specified weight.")
         logger.error("If you trained your model with --light, "
                      "consider adding --light when executing this script; otherwise, "

@@ -3,7 +3,8 @@ Minimum inference code
 """
 import os
 import numpy as np
-from imageio import imread, imwrite
+from imageio import imwrite
+from PIL import Image
 import tensorflow as tf
 from logger import get_logger
 
@@ -18,7 +19,8 @@ def main(m_path, img_path, out_dir):
     logger.info(f"generating image from {img_path}")
     imported = tf.saved_model.load(m_path)
     f = imported.signatures["serving_default"]
-    img = np.expand_dims(imread(img_path), 0).astype(np.float32) / 127.5 - 1
+    img = np.array(Image.open(img_path).convert("RGB"))
+    img = np.expand_dims(img, 0).astype(np.float32) / 127.5 - 1
     out = f(tf.constant(img))['output_1']
     out = ((out.numpy().squeeze() + 1) * 127.5).astype(np.uint8)
     if out_dir != "" and not os.path.isdir(out_dir):
