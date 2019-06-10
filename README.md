@@ -36,18 +36,15 @@ To run code in this repo properly, you will need:
 - [tb-nightly](https://pypi.org/project/tb-nightly/)
 
 For environment management, we recommend [Conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html#regular-installation). You can get `conda` by installing [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
-If GPU is available, you can install all the packages by running the following commands:
+You can install all the packages by running the following commands:
 
 ```bash
-conda env create -n cartoongan -f environment_gpu.yml  # Installs python==3.6.8 to the new environment
-conda activate cartoongan
-# to deactivate this env, run "conda deactivate"
-```
-
-Although it is not recommended to train CartoonGANs without a GPU, you can still set up environment by running:
-
-```bash
-conda env create -n cartoongan -f environment_cpu.yml  # Installs python==3.6.8 to the new environment
+# Select .yml file depending on your os and whether GPU is available
+# environment_linux_gpu.yml for linux with nvidia gpu
+# environment_linux_cpu.yml for linux without nvidia gpu
+# environment_mac_cpu.yml for mac without nvidia gpu
+conda env create -n cartoongan -f environment_linux_gpu.yml
+# Installs python==3.6.8 to the new environment
 conda activate cartoongan
 # to deactivate this env, run "conda deactivate"
 ```
