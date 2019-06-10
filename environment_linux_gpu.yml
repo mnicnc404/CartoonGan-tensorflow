@@ -1,4 +1,4 @@
-name: tf2
+name: cartoongan
 channels:
   - defaults
 dependencies:
@@ -92,5 +92,4 @@ dependencies:
     - termcolor==1.1.0
     - tf-estimator-nightly==1.14.0.dev2019030115
     - werkzeug==0.15.2
-prefix: /opt/miniconda3/envs/tf2
 

@@ -1,4 +1,4 @@
-name: conda_req
+name: cartoongan
 channels:
   - defaults
 dependencies:
@@ -75,5 +75,4 @@ dependencies:
     - tf-nightly-2-0-preview==2.0.0.dev20190506
     - werkzeug==0.15.2
     - wrapt==1.11.1
-prefix: /Users/chingning/miniconda3/envs/conda_req
 
