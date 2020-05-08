@@ -1,3 +1,4 @@
+## This repo is no longer being maintained. To reproduce the reslut, please 100% follow the instructions including environment settings and training commands.
 # CartoonGAN-TensorFlow2
 Generate your own cartoon-style images with [CartoonGAN (CVPR 2018)](http://openaccess.thecvf.com/content_cvpr_2018/papers/Chen_CartoonGAN_Generative_Adversarial_CVPR_2018_paper.pdf), powered by [TensorFlow 2.0 Alpha](https://www.tensorflow.org/alpha).
 
