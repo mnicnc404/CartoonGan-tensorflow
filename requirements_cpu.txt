@@ -1,5 +1,5 @@
 numpy==1.15.1
-tensorflow==2.0.0a0
+tensorflow==2.5.0rc0
 six==1.11.0
 tensorflowjs==1.0.1
 tqdm
