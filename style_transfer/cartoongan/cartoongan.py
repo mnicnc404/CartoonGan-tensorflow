@@ -1,8 +1,8 @@
 import os
 import numpy as np
 import tensorflow as tf
-#from keras_contrib.layers import InstanceNormalization
-#from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
+# from keras_contrib.layers import InstanceNormalization
+# from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
 from tensorflow.keras.layers import Layer, InputSpec
 
 PRETRAINED_WEIGHT_DIR = os.path.join(
@@ -145,8 +145,7 @@ class InstanceNormalization(Layer):
             'gamma_constraint': tf.keras.constraints.serialize(self.gamma_constraint)
         }
         base_config = super(InstanceNormalization, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))  
-
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 # ref: https://stackoverflow.com/a/53349976/2447655
