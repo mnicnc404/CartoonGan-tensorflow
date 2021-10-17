@@ -10,10 +10,8 @@ from tqdm import tqdm
 from datetime import datetime
 from style_transfer.cartoongan import cartoongan
 
-
 STYLES = ["shinkai", "hayao", "hosoda", "paprika"]
 VALID_EXTENSIONS = ['jpg', 'png', 'gif', 'JPG']
-
 
 parser = argparse.ArgumentParser(description="transform real world images to specified cartoon style(s)")
 parser.add_argument("--styles", nargs="+", default=[STYLES[0]],
@@ -62,7 +60,6 @@ parser.add_argument("--show_tf_cpp_log", action="store_true")
 args = parser.parse_args()
 
 TEMPORARY_DIR = os.path.join(f"{args.output_dir}", ".tmp")
-
 
 logger = logging.getLogger("Cartoonizer")
 logger.propagate = False
@@ -160,7 +157,7 @@ def save_concatenated_image(image_paths, image_folder="comparison", num_columns=
         logger.debug(f"Wrong `comparison_view`: {args.comparison_view}")
 
     images_comb = PIL.Image.fromarray(images_comb)
-    file_name = image_paths[0].split("/")[-1]
+    file_name = image_paths[0].split("\\")[-1]
 
     if args.output_dir not in image_folder:
         image_folder = os.path.join(args.output_dir, image_folder)
@@ -174,7 +171,7 @@ def save_concatenated_image(image_paths, image_folder="comparison", num_columns=
 
 def convert_gif_to_png(gif_path):
     logger.debug(f"`{gif_path}` is a gif, extracting png images from it...")
-    gif_filename = gif_path.split("/")[-1].replace(".gif", "")
+    gif_filename = gif_path.split("\\")[-1].replace(".gif", "")
     image = PIL.Image.open(gif_path)
     palette = image.getpalette()
     png_paths = list()
@@ -226,7 +223,7 @@ def convert_gif_to_png(gif_path):
 
 def transform_png_images(image_paths, model, style, return_existing_result=False):
     transformed_image_paths = list()
-    save_dir = os.path.join("/".join(image_paths[0].split("/")[:-1]), style)
+    save_dir = os.path.join("/".join(image_paths[0].split("\\")[:-1]), style)
     logger.debug(f"Transforming {len(image_paths)} images and saving them to {save_dir}....")
 
     if return_existing_result:
@@ -237,7 +234,7 @@ def transform_png_images(image_paths, model, style, return_existing_result=False
 
     logger.debug(f"Processing {num_batch} batches with batch_size={args.batch_size}...")
     for batch_image_paths in image_paths:
-        image_filenames = [path.split("/")[-1] for path in batch_image_paths]
+        image_filenames = [path.split("\\")[-1] for path in batch_image_paths]
         input_images = [pre_processing(path, style=style, expand_dim=False) for path in batch_image_paths]
         input_images = np.stack(input_images, axis=0)
         transformed_images = model(input_images)
@@ -251,7 +248,6 @@ def transform_png_images(image_paths, model, style, return_existing_result=False
 
 
 def save_png_images_as_gif(image_paths, image_filename, style="comparison"):
-
     gif_dir = os.path.join(args.output_dir, style)
     if not os.path.exists(gif_dir):
         os.makedirs(gif_dir)
@@ -267,9 +263,8 @@ def save_png_images_as_gif(image_paths, image_filename, style="comparison"):
 
 
 def convert_gif_to_mp4(gif_path, crf=25):
-
     mp4_dir = os.path.join(os.path.dirname(gif_path), "mp4")
-    gif_file = gif_path.split("/")[-1]
+    gif_file = gif_path.split("\\")[-1]
     if not os.path.exists(mp4_dir):
         os.makedirs(mp4_dir)
     mp4_path = os.path.join(mp4_dir, gif_file.replace(".gif", ".mp4"))
@@ -279,11 +274,10 @@ def convert_gif_to_mp4(gif_path, crf=25):
 
 
 def result_exist(image_path, style):
-    return os.path.exists(os.path.join(args.output_dir, style, image_path.split("/")[-1]))
+    return os.path.exists(os.path.join(args.output_dir, style, image_path.split("\\")[-1]))
 
 
 def main():
-
     start = datetime.now()
     logger.info(f"Transformed images will be saved to `{args.output_dir}` folder.")
     if not os.path.exists(args.output_dir):
@@ -309,7 +303,7 @@ def main():
 
     progress_bar = tqdm(image_paths, desc='Transforming')
     for image_path in progress_bar:
-        image_filename = image_path.split("/")[-1]
+        image_filename = image_path.split("\\")[-1]
         progress_bar.set_postfix(File=image_filename)
 
         if image_filename.endswith(".gif") and not args.ignore_gif:
@@ -351,7 +345,7 @@ def main():
                 return_existing_result = result_exist(image_path, style) and not args.overwrite
 
                 if not return_existing_result:
-                    transformed_image = model(input_image)
+                    transformed_image = model.predict(input_image, use_multiprocessing=True)
                     output_image = post_processing(transformed_image, style=style)
                     transformed_image_path = save_transformed_image(output_image, image_filename, save_dir)
                 else:
